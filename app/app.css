@@ -4,10 +4,12 @@
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif,
     "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
 
-  --color-main-blue: #647CB4;
+  --color-primary-blue: #647CB4;
+  --color-primary-grey: #9FA5B4;
+  --color-primary-blue-dark: #65718d;
+  --color-primary-grey-dark: #83868d;
   --color-bg-white: #F7F4F1;
   --color-bg-black: #2C2A28;
-  --color-text-grey: #9FA5B4;
 }
 
 html,

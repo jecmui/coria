@@ -54,12 +54,12 @@ function Login() {
                             setEmailOrUser(e.target.value);
                             if (emailError) setEmailError("");
                         }}
-                        className={`block px-3.5 pb-2.5 pt-6 w-full text-sm text-heading bg-neutral-secondary-medium appearance-none focus:outline-none focus:ring-0 peer bg-white rounded-2xl border-1 ${emailError ? 'border-red-500 focus:border-red-500' : 'focus:border-brand'}`}
+                        className={`block px-3.5 pb-2.5 pt-6 w-full text-sm text-heading bg-neutral-secondary-medium appearance-none focus:outline-none focus:ring-0 peer bg-white rounded-2xl border-1 border-(--color-primary-grey) hover:border-(--color-primary-grey-dark) ${emailError ? 'border-red-500 focus:border-red-500' : 'focus:border-brand'}`}
                         placeholder=" "
                     />
                     <label 
                         htmlFor={"email-or-username-input"} 
-                        className="absolute text-sm text-body duration-300 transform -translate-y-3 scale-75 top-4.5 z-10 origin-[0] start-3.5 peer-focus:text-fg-brand peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3 rtl:peer-focus:translate-x-1/4 rtl:peer-focus:left-auto text-(--color-text-grey)">
+                        className="absolute text-sm text-body duration-300 transform -translate-y-3 scale-75 top-4.5 z-10 origin-[0] start-3.5 peer-focus:text-fg-brand peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3 rtl:peer-focus:translate-x-1/4 rtl:peer-focus:left-auto text-(--color-primary-grey)">
                             {"Email or username"}
                     </label>
                 </div>
@@ -77,18 +77,18 @@ function Login() {
                             setPassword(e.target.value);
                             if (passwordError) setPasswordError("");
                         }}
-                        className={`block px-3.5 pb-2.5 pt-6 pr-10 w-full text-sm text-heading bg-neutral-secondary-medium appearance-none focus:outline-none focus:ring-0 peer bg-white rounded-2xl border-1 ${passwordError ? 'border-red-500 focus:border-red-500' : 'focus:border-brand'}`}
+                        className={`block px-3.5 pb-2.5 pt-6 pr-10 w-full text-sm text-heading bg-neutral-secondary-medium appearance-none focus:outline-none focus:ring-0 peer bg-white rounded-2xl border-1 border-(--color-primary-grey) hover:border-(--color-primary-grey-dark) ${passwordError ? 'border-red-500 focus:border-red-500' : 'focus:border-brand'}`}
                         placeholder=" "
                     />
                     <label 
                         htmlFor={"password-input"} 
-                        className="absolute text-sm text-body duration-300 transform -translate-y-3 scale-75 top-4.5 z-10 origin-[0] start-3.5 peer-focus:text-fg-brand peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3 rtl:peer-focus:translate-x-1/4 rtl:peer-focus:left-auto text-(--color-text-grey)">
+                        className="absolute text-sm text-body duration-300 transform -translate-y-3 scale-75 top-4.5 z-10 origin-[0] start-3.5 peer-focus:text-fg-brand peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3 rtl:peer-focus:translate-x-1/4 rtl:peer-focus:left-auto text-(--color-primary-grey)">
                             {"Password"}
                     </label>
                     <button
                         type="button"
                         onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 pr-1 py-2 text-(--color-text-grey) hover:text-gray-700 cursor-pointer"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 pr-1 py-2 text-(--color-primary-grey) hover:text-(--color-primary-grey-dark) cursor-pointer"
                     >
                         {showPassword ? <FaEyeSlash /> : <FaEye />}
                     </button>
@@ -98,9 +98,13 @@ function Login() {
                         {passwordError}
                     </div>
                 )}
-                <input type="submit" value="Login" className="block bg-(--color-main-blue) text-white px-6 py-3 mt-6 rounded-2xl mx-auto w-full sm:w-auto cursor-pointer"/>
+                <input type="submit" value="Login" className="block bg-(--color-primary-blue) hover:bg-(--color-primary-blue-dark) text-white px-6 py-3 mt-6 rounded-2xl mx-auto w-full sm:w-auto cursor-pointer "/>
             </form>
-            <div className="mt-6 text-(--color-text-grey)">New to Bullet? <Link to={"/register"}>Create an account</Link></div>
+            <div className="mt-6 text-(--color-primary-grey)">
+                <Link to={"/register"}>
+                    <div className="underline hover:text-(--color-primary-grey-dark)">New to Bullet? Create an account</div>
+                </Link>
+            </div>
         </div>
     );
 }
