@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { FaEye, FaEyeSlash } from "react-icons/fa6";
+import { Link } from "react-router";
+import Register from "./register";
 
 function Login() {
     const [emailOrUser, setEmailOrUser] = useState("");
@@ -39,7 +41,7 @@ function Login() {
             <img 
                 src="public/bullet-logo-full.png"
                 alt="The full bullet website logo. It features the handwritten text 'bullet' in all lowercase with serifs, two stars, one underneath the letters and one to the top right."
-                className="w-full sm:w-lg lg:w-lg mb-8 sm:mb-10"
+                className="w-full sm:w-lg lg:w-lg mb-6 sm:mb-8"
             />
             <form className="w-full max-w-md space-y-4" onSubmit={handleSubmit}>
                 
@@ -57,7 +59,7 @@ function Login() {
                     />
                     <label 
                         htmlFor={"email-or-username-input"} 
-                        className="absolute text-sm text-body duration-300 transform -translate-y-3 scale-75 top-4.5 z-10 origin-[0] start-3.5 peer-focus:text-fg-brand peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3 rtl:peer-focus:translate-x-1/4 rtl:peer-focus:left-auto text-(--color-placeholder-grey)">
+                        className="absolute text-sm text-body duration-300 transform -translate-y-3 scale-75 top-4.5 z-10 origin-[0] start-3.5 peer-focus:text-fg-brand peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3 rtl:peer-focus:translate-x-1/4 rtl:peer-focus:left-auto text-(--color-text-grey)">
                             {"Email or username"}
                     </label>
                 </div>
@@ -80,13 +82,13 @@ function Login() {
                     />
                     <label 
                         htmlFor={"password-input"} 
-                        className="absolute text-sm text-body duration-300 transform -translate-y-3 scale-75 top-4.5 z-10 origin-[0] start-3.5 peer-focus:text-fg-brand peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3 rtl:peer-focus:translate-x-1/4 rtl:peer-focus:left-auto text-(--color-placeholder-grey)">
+                        className="absolute text-sm text-body duration-300 transform -translate-y-3 scale-75 top-4.5 z-10 origin-[0] start-3.5 peer-focus:text-fg-brand peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3 rtl:peer-focus:translate-x-1/4 rtl:peer-focus:left-auto text-(--color-text-grey)">
                             {"Password"}
                     </label>
                     <button
                         type="button"
                         onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 pr-1 py-2 text-gray-500 hover:text-gray-700 cursor-pointer"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 pr-1 py-2 text-(--color-text-grey) hover:text-gray-700 cursor-pointer"
                     >
                         {showPassword ? <FaEyeSlash /> : <FaEye />}
                     </button>
@@ -96,8 +98,9 @@ function Login() {
                         {passwordError}
                     </div>
                 )}
-                <input type="submit" value="Login" className="block bg-(--color-main-blue) text-white px-6 py-3 mt-10 rounded-2xl mx-auto w-full sm:w-auto cursor-pointer"/>
+                <input type="submit" value="Login" className="block bg-(--color-main-blue) text-white px-6 py-3 mt-6 rounded-2xl mx-auto w-full sm:w-auto cursor-pointer"/>
             </form>
+            <div className="mt-6 text-(--color-text-grey)">New to Bullet? <Link to={"/register"}>Create an account</Link></div>
         </div>
     );
 }
