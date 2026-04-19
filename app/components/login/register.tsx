@@ -10,6 +10,7 @@ function Register() {
     const [emailError, setEmailError] = useState("");
     const [usernameError, setUsernameError] = useState("");
     const [passwordError, setPasswordError] = useState("");
+    const [matchError, setMatchError] = useState("");
     const [showPassword, setShowPassword] = useState(false);
 
     // Password requirement checks
@@ -34,11 +35,16 @@ function Register() {
         }
     }
 
-    const validatePassword = (value: string, value1: string) => {
-        if (!value.trim()) {
+    const validatePassword = (value: string) => {
+        if (!value.trim() || !hasMinLength || !hasSpecialChar || !hasUppercase || !hasLowercase || !hasNumber) {
             return "Please enter a valid password."; 
-        } else if (value != value1) {
-            return "Passwords do not match."
+        } 
+        return "";
+    }
+
+    const validateMatch = (value1: string, value2: string) => {
+        if (value1 != value2) {
+            return "Passwords do not match.";
         }
         return "";
     }
@@ -47,7 +53,8 @@ function Register() {
         e.preventDefault();
         const error1 = validateEmail(email);
         const error2 = validateUsername(username);
-        const error3 = validatePassword(password, password2);
+        const error3 = validatePassword(password);
+        const error4 = validateMatch(password, password2);
         if (error1) {
             setEmailError(error1);
         }
@@ -56,6 +63,9 @@ function Register() {
         }
         if (error3) {
             setPasswordError(error3);
+        }
+        if (error4) {
+            setMatchError(error4);
         }
     };
 
@@ -160,9 +170,9 @@ function Register() {
                         type={showPassword ? "text" : "password"}
                         onChange={(e) => {
                             setPassword2(e.target.value);
-                            if (passwordError) setPasswordError("");
+                            if (matchError) setMatchError("");
                         }}
-                        className={`block px-3.5 pb-2.5 pt-6 pr-10 w-full text-sm text-black bg-neutral-secondary-medium appearance-none focus:outline-none focus:ring-0 peer bg-white rounded-2xl border-1 border-(--color-primary-grey) hover:border-(--color-primary-grey-dark) ${passwordError ? 'border-red-500 focus:border-red-500' : 'focus:border-brand'}`}
+                        className={`block px-3.5 pb-2.5 pt-6 pr-10 w-full text-sm text-black bg-neutral-secondary-medium appearance-none focus:outline-none focus:ring-0 peer bg-white rounded-2xl border-1 border-(--color-primary-grey) hover:border-(--color-primary-grey-dark) ${matchError ? 'border-red-500 focus:border-red-500' : 'focus:border-brand'}`}
                         placeholder=" "
                     />
                     <label 
@@ -178,9 +188,9 @@ function Register() {
                         {showPassword ? <FaEyeSlash /> : <FaEye />}
                     </button>
                 </div>
-                {passwordError && (
+                {matchError && (
                     <div className="text-red-500 text-xs -mt-2">
-                        {passwordError}
+                        {matchError}
                     </div>
                 )}
                 <input type="submit" value="Create Account" className="block bg-(--color-primary-blue) hover:bg-(--color-primary-blue-dark) text-sm text-white px-6 py-3 mt-6 rounded-2xl mx-auto w-full sm:w-auto cursor-pointer "/>
