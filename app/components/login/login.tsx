@@ -37,12 +37,13 @@ function Login() {
     };
 
     return (
-        <div className="flex flex-col items-center justify-center min-h-screen px-4 -translate-y-10">
-            <img 
+        <div className="flex flex-col items-center justify-center min-h-screen px-4">
+            {/* <img 
                 src="/bullet-logo-full.png"
                 alt="The full bullet website logo. It features the handwritten text 'bullet' in all lowercase with serifs, two stars, one underneath the letters and one to the top right."
                 className="w-full sm:w-lg lg:w-lg mb-6 sm:mb-8"
-            />
+            /> */}
+            <h1 className="text-5xl my-10 text-(--color-primary-blue) font-bold">welcome back :)</h1>
             <form className="w-full max-w-md space-y-4" onSubmit={handleSubmit} noValidate>
                 
                 <div className="relative">
