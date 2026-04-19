@@ -39,11 +39,11 @@ function Login() {
     return (
         <div className="flex flex-col items-center justify-center min-h-screen px-4 -translate-y-10">
             <img 
-                src="public/bullet-logo-full.png"
+                src="/bullet-logo-full.png"
                 alt="The full bullet website logo. It features the handwritten text 'bullet' in all lowercase with serifs, two stars, one underneath the letters and one to the top right."
                 className="w-full sm:w-lg lg:w-lg mb-6 sm:mb-8"
             />
-            <form className="w-full max-w-md space-y-4" onSubmit={handleSubmit}>
+            <form className="w-full max-w-md space-y-4" onSubmit={handleSubmit} noValidate>
                 
                 <div className="relative">
                     <input 
@@ -54,7 +54,7 @@ function Login() {
                             setEmailOrUser(e.target.value);
                             if (emailError) setEmailError("");
                         }}
-                        className={`block px-3.5 pb-2.5 pt-6 w-full text-sm text-heading bg-neutral-secondary-medium appearance-none focus:outline-none focus:ring-0 peer bg-white rounded-2xl border-1 border-(--color-primary-grey) hover:border-(--color-primary-grey-dark) ${emailError ? 'border-red-500 focus:border-red-500' : 'focus:border-brand'}`}
+                        className={`block px-3.5 pb-2.5 pt-6 w-full text-sm text-black bg-neutral-secondary-medium appearance-none focus:outline-none focus:ring-0 peer bg-white rounded-2xl border-1 border-(--color-primary-grey) hover:border-(--color-primary-grey-dark) ${emailError ? 'border-red-500 focus:border-red-500' : 'focus:border-brand'}`}
                         placeholder=" "
                     />
                     <label 
@@ -77,7 +77,7 @@ function Login() {
                             setPassword(e.target.value);
                             if (passwordError) setPasswordError("");
                         }}
-                        className={`block px-3.5 pb-2.5 pt-6 pr-10 w-full text-sm text-heading bg-neutral-secondary-medium appearance-none focus:outline-none focus:ring-0 peer bg-white rounded-2xl border-1 border-(--color-primary-grey) hover:border-(--color-primary-grey-dark) ${passwordError ? 'border-red-500 focus:border-red-500' : 'focus:border-brand'}`}
+                        className={`block px-3.5 pb-2.5 pt-6 pr-10 w-full text-sm text-black bg-neutral-secondary-medium appearance-none focus:outline-none focus:ring-0 peer bg-white rounded-2xl border-1 border-(--color-primary-grey) hover:border-(--color-primary-grey-dark) ${passwordError ? 'border-red-500 focus:border-red-500' : 'focus:border-brand'}`}
                         placeholder=" "
                     />
                     <label 

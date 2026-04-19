@@ -1,17 +1,7 @@
-import { createBrowserRouter } from "react-router";
-import Register from "./components/login/register";
-import Login from "./components/login/login";
-import Home from "./routes/home";
+import { type RouteConfig, index, route } from "@react-router/dev/routes";
 
-const router = createBrowserRouter([
-    {
-        path: "/",
-        Component: Home,
-        children: [
-            { index: true, Component: Login },
-            { path: "register", Component: Register },
-        ]
-    },
-]);
-
-export default router;
+export default [
+    index("routes/home.tsx"),
+    route("login", "components/login/login.tsx"),
+    route("register", "components/login/register.tsx"),
+] satisfies RouteConfig;
