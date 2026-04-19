@@ -64,7 +64,7 @@ function Login() {
                     </label>
                 </div>
                 {emailError && (
-                    <div className="text-red-500 text-sm -mt-2">
+                    <div className="text-red-500 text-xs -mt-2">
                         {emailError}
                     </div>
                 )}
@@ -94,7 +94,7 @@ function Login() {
                     </button>
                 </div>
                 {passwordError && (
-                    <div className="text-red-500 text-sm -mt-2">
+                    <div className="text-red-500 text-xs -mt-2">
                         {passwordError}
                     </div>
                 )}
@@ -102,7 +102,7 @@ function Login() {
             </form>
             <div className="mt-6 text-(--color-primary-grey)">
                 <Link to={"/register"}>
-                    <div className="underline hover:text-(--color-primary-grey-dark)">New to Bullet? Create an account</div>
+                    <div className="underline text-sm hover:text-(--color-primary-grey-dark)">New to Bullet? Create an account</div>
                 </Link>
             </div>
         </div>

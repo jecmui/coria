@@ -87,7 +87,7 @@ function Register() {
                     </label>
                 </div>
                 {emailError && (
-                    <div className="text-red-500 text-sm -mt-2">
+                    <div className="text-red-500 text-xs -mt-2">
                         {emailError}
                     </div>
                 )}
@@ -111,7 +111,7 @@ function Register() {
                     </label>
                 </div>
                 {usernameError && (
-                    <div className="text-red-500 text-sm -mt-2">
+                    <div className="text-red-500 text-xs -mt-2">
                         {usernameError}
                     </div>
                 )}
@@ -142,7 +142,7 @@ function Register() {
                     </button>
                 </div>
                 {passwordError && (
-                    <div className="text-red-500 text-sm -mt-2">
+                    <div className="text-red-500 text-xs -mt-2">
                         {passwordError}
                     </div>
                 )}
@@ -183,15 +183,15 @@ function Register() {
                     </button>
                 </div>
                 {passwordError && (
-                    <div className="text-red-500 text-sm -mt-2">
+                    <div className="text-red-500 text-xs -mt-2">
                         {passwordError}
                     </div>
                 )}
-                <input type="submit" value="Login" className="block bg-(--color-primary-blue) hover:bg-(--color-primary-blue-dark) text-white px-6 py-3 mt-6 rounded-2xl mx-auto w-full sm:w-auto cursor-pointer "/>
+                <input type="submit" value="Create Account" className="block bg-(--color-primary-blue) hover:bg-(--color-primary-blue-dark) text-sm text-white px-6 py-3 mt-6 rounded-2xl mx-auto w-full sm:w-auto cursor-pointer "/>
             </form>
             <div className="mt-6 text-(--color-primary-grey)">
                 <Link to={"/login"}>
-                    <div className="underline hover:text-(--color-primary-grey-dark)">Already have an account? Login</div>
+                    <div className="text-sm underline hover:text-(--color-primary-grey-dark)">Already have an account? Login</div>
                 </Link>
             </div>
         </div>
