@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { FaEye, FaEyeSlash } from "react-icons/fa6";
-import { Link } from "react-router";
+import { Link, redirect } from "react-router";
 import Register from "./register";
 
 function Login() {
@@ -28,12 +28,14 @@ function Login() {
         e.preventDefault();
         const error1 = validateEmailOrUsername(emailOrUser);
         const error2 = validatePassword(password);
-        if (error1) {
+        if (error1 || error2) {
             setEmailError(error1);
+            setEmailError(error2);
+        } else {
+            // redirect
         }
-        if (error2) {
-            setPasswordError(error2);
-        }
+
+
     };
 
     return (
@@ -44,6 +46,7 @@ function Login() {
                 className="w-full sm:w-lg lg:w-lg mb-6 sm:mb-8"
             /> */}
             <h1 className="text-5xl my-10 text-(--color-primary-blue) font-bold">welcome back :)</h1>
+
             <form className="w-full max-w-md space-y-4" onSubmit={handleSubmit} noValidate>
                 
                 <div className="relative">
