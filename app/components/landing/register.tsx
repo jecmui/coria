@@ -139,13 +139,6 @@ function Register() {
                         className="absolute text-sm text-body duration-300 transform -translate-y-3 scale-75 top-4.5 z-10 origin-[0] start-3.5 peer-focus:text-fg-brand peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3 rtl:peer-focus:translate-x-1/4 rtl:peer-focus:left-auto text-(--color-primary-grey)">
                             {"Password"}
                     </label>
-                    <button
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 pr-1 py-2 text-(--color-primary-grey) hover:text-(--color-primary-grey-dark) cursor-pointer"
-                    >
-                        {showPassword ? <FaEyeSlash /> : <FaEye />}
-                    </button>
                 </div>
                 {passwordError && (
                     <div className="text-red-500 text-xs -mt-2">
@@ -180,19 +173,21 @@ function Register() {
                         className="absolute text-sm text-body duration-300 transform -translate-y-3 scale-75 top-4.5 z-10 origin-[0] start-3.5 peer-focus:text-fg-brand peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3 rtl:peer-focus:translate-x-1/4 rtl:peer-focus:left-auto text-(--color-primary-grey)">
                             {"Retype password"}
                     </label>
-                    <button
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 pr-1 py-2 text-(--color-primary-grey) hover:text-(--color-primary-grey-dark) cursor-pointer"
-                    >
-                        {showPassword ? <FaEyeSlash /> : <FaEye />}
-                    </button>
                 </div>
+
                 {matchError && (
                     <div className="text-red-500 text-xs -mt-2">
                         {matchError}
                     </div>
                 )}
+
+                <div className="mb-0 -mt-2">
+                    <input type="checkbox" id="show-password-checkbox" className="accent-(--color-primary-grey) hover:accent-(--color-primary-grey-dark)" onClick={() => setShowPassword(!showPassword)} value="Show password"/>
+                    <label htmlFor="show-password-checkbox" className="text-(--color-primary-grey) hover:text-(--color-primary-grey-dark) text-sm pl-1.5">
+                        Show password
+                    </label>
+                </div>
+                
                 <input type="submit" value="Create Account" className="block bg-(--color-primary-blue) hover:bg-(--color-primary-blue-dark) text-sm text-white px-6 py-3 mt-6 rounded-2xl mx-auto w-full sm:w-auto cursor-pointer "/>
             </form>
             <div className="mt-6 text-(--color-primary-grey)">
@@ -200,12 +195,6 @@ function Register() {
                     <div className="text-sm underline hover:text-(--color-primary-grey-dark)">Already have an account? Login</div>
                 </Link>
             </div>
-        </div>
-    );
-
-    return (
-        <div>
-            This is a placeholder for the register page.
         </div>
     );
 }
