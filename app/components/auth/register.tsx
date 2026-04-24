@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import { FaEye, FaEyeSlash } from "react-icons/fa6";
 
 function Register() {
     const [email, setEmail] = useState("");
@@ -22,32 +21,43 @@ function Register() {
 
     const validateEmail = (value: string) => {
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!value.trim() || value.indexOf(' ') >= 0 || !emailRegex.test(value)) {
+        if (
+            !value.trim() ||
+            value.indexOf(" ") >= 0 ||
+            !emailRegex.test(value)
+        ) {
             return "Please enter a valid email address.";
-        } 
-    }
+        }
+    };
 
     const validateUsername = (value: string) => {
         if (!value.trim()) {
             return "Please enter a valid username.";
-        } else if (value.indexOf(' ') >= 0) {
+        } else if (value.indexOf(" ") >= 0) {
             return "Usernames cannot have spaces.";
         }
-    }
+    };
 
     const validatePassword = (value: string) => {
-        if (!value.trim() || !hasMinLength || !hasSpecialChar || !hasUppercase || !hasLowercase || !hasNumber) {
-            return "Please enter a valid password."; 
-        } 
+        if (
+            !value.trim() ||
+            !hasMinLength ||
+            !hasSpecialChar ||
+            !hasUppercase ||
+            !hasLowercase ||
+            !hasNumber
+        ) {
+            return "Please enter a valid password.";
+        }
         return "";
-    }
+    };
 
     const validateMatch = (value1: string, value2: string) => {
         if (value1 != value2) {
             return "Passwords do not match.";
         }
         return "";
-    }
+    };
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -71,11 +81,17 @@ function Register() {
 
     return (
         <div className="flex flex-col items-center justify-center min-h-screen px-4">
-            <h1 className="text-5xl my-10 text-(--color-primary-blue) font-bold">welcome in :)</h1>
-            <form className="w-full max-w-md space-y-4" onSubmit={handleSubmit} noValidate>
+            <h1 className="text-5xl my-10 text-(--color-primary-blue) font-bold">
+                welcome in :)
+            </h1>
+            <form
+                className="w-full max-w-md space-y-4"
+                onSubmit={handleSubmit}
+                noValidate
+            >
                 {/* Email input */}
                 <div className="relative">
-                    <input 
+                    <input
                         id="email-input"
                         value={email}
                         type="email"
@@ -83,13 +99,14 @@ function Register() {
                             setEmail(e.target.value);
                             if (emailError) setEmailError("");
                         }}
-                        className={`block px-3.5 pb-2.5 pt-6 w-full text-sm text-black bg-neutral-secondary-medium appearance-none focus:outline-none focus:ring-0 peer bg-white rounded-2xl border-1 border-(--color-primary-grey) hover:border-(--color-primary-grey-dark) ${emailError ? 'border-red-500 focus:border-red-500' : 'focus:border-brand'}`}
+                        className={`block px-3.5 pb-2.5 pt-6 w-full text-sm text-black bg-neutral-secondary-medium appearance-none focus:outline-none focus:ring-0 peer bg-white rounded-2xl border-1 border-(--color-primary-grey) hover:border-(--color-primary-grey-dark) ${emailError ? "border-red-500 focus:border-red-500" : "focus:border-brand"}`}
                         placeholder=" "
                     />
-                    <label 
-                        htmlFor={"email-input"} 
-                        className="absolute text-sm text-body duration-300 transform -translate-y-3 scale-75 top-4.5 z-10 origin-[0] start-3.5 peer-focus:text-fg-brand peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3 rtl:peer-focus:translate-x-1/4 rtl:peer-focus:left-auto text-(--color-primary-grey)">
-                            {"Email address"}
+                    <label
+                        htmlFor={"email-input"}
+                        className="absolute text-sm text-body duration-300 transform -translate-y-3 scale-75 top-4.5 z-10 origin-[0] start-3.5 peer-focus:text-fg-brand peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3 rtl:peer-focus:translate-x-1/4 rtl:peer-focus:left-auto text-(--color-primary-grey)"
+                    >
+                        {"Email address"}
                     </label>
                 </div>
                 {emailError && (
@@ -99,7 +116,7 @@ function Register() {
                 )}
                 {/* Username input */}
                 <div className="relative">
-                    <input 
+                    <input
                         id="username-input"
                         value={username}
                         type="text"
@@ -107,13 +124,14 @@ function Register() {
                             setUsername(e.target.value);
                             if (usernameError) setUsernameError("");
                         }}
-                        className={`block px-3.5 pb-2.5 pt-6 w-full text-sm text-black bg-neutral-secondary-medium appearance-none focus:outline-none focus:ring-0 peer bg-white rounded-2xl border-1 border-(--color-primary-grey) hover:border-(--color-primary-grey-dark) ${usernameError ? 'border-red-500 focus:border-red-500' : 'focus:border-brand'}`}
+                        className={`block px-3.5 pb-2.5 pt-6 w-full text-sm text-black bg-neutral-secondary-medium appearance-none focus:outline-none focus:ring-0 peer bg-white rounded-2xl border-1 border-(--color-primary-grey) hover:border-(--color-primary-grey-dark) ${usernameError ? "border-red-500 focus:border-red-500" : "focus:border-brand"}`}
                         placeholder=" "
                     />
-                    <label 
-                        htmlFor={"email-input"} 
-                        className="absolute text-sm text-body duration-300 transform -translate-y-3 scale-75 top-4.5 z-10 origin-[0] start-3.5 peer-focus:text-fg-brand peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3 rtl:peer-focus:translate-x-1/4 rtl:peer-focus:left-auto text-(--color-primary-grey)">
-                            {"Username"}
+                    <label
+                        htmlFor={"email-input"}
+                        className="absolute text-sm text-body duration-300 transform -translate-y-3 scale-75 top-4.5 z-10 origin-[0] start-3.5 peer-focus:text-fg-brand peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3 rtl:peer-focus:translate-x-1/4 rtl:peer-focus:left-auto text-(--color-primary-grey)"
+                    >
+                        {"Username"}
                     </label>
                 </div>
                 {usernameError && (
@@ -123,7 +141,7 @@ function Register() {
                 )}
                 {/* Password input */}
                 <div className="relative">
-                    <input 
+                    <input
                         id="password-input"
                         value={password}
                         type={showPassword ? "text" : "password"}
@@ -131,13 +149,14 @@ function Register() {
                             setPassword(e.target.value);
                             if (passwordError) setPasswordError("");
                         }}
-                        className={`block px-3.5 pb-2.5 pt-6 pr-10 w-full text-sm text-black bg-neutral-secondary-medium appearance-none focus:outline-none focus:ring-0 peer bg-white rounded-2xl border-1 border-(--color-primary-grey) hover:border-(--color-primary-grey-dark) ${passwordError ? 'border-red-500 focus:border-red-500' : 'focus:border-brand'}`}
+                        className={`block px-3.5 pb-2.5 pt-6 pr-10 w-full text-sm text-black bg-neutral-secondary-medium appearance-none focus:outline-none focus:ring-0 peer bg-white rounded-2xl border-1 border-(--color-primary-grey) hover:border-(--color-primary-grey-dark) ${passwordError ? "border-red-500 focus:border-red-500" : "focus:border-brand"}`}
                         placeholder=" "
                     />
-                    <label 
-                        htmlFor={"password-input"} 
-                        className="absolute text-sm text-body duration-300 transform -translate-y-3 scale-75 top-4.5 z-10 origin-[0] start-3.5 peer-focus:text-fg-brand peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3 rtl:peer-focus:translate-x-1/4 rtl:peer-focus:left-auto text-(--color-primary-grey)">
-                            {"Password"}
+                    <label
+                        htmlFor={"password-input"}
+                        className="absolute text-sm text-body duration-300 transform -translate-y-3 scale-75 top-4.5 z-10 origin-[0] start-3.5 peer-focus:text-fg-brand peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3 rtl:peer-focus:translate-x-1/4 rtl:peer-focus:left-auto text-(--color-primary-grey)"
+                    >
+                        {"Password"}
                     </label>
                 </div>
                 {passwordError && (
@@ -148,16 +167,26 @@ function Register() {
                 <div className="text-(--color-primary-grey) text-xs -mt-2">
                     Password must contain the following:
                     <ul className="list-disc list-inside">
-                        <li className={hasMinLength ? "text-green-600" : ""}>At least 8 characters</li>
-                        <li className={hasSpecialChar ? "text-green-600" : ""}>A special character such as !@#$%^&amp;*</li>
-                        <li className={hasUppercase ? "text-green-600" : ""}>An uppercase character</li>
-                        <li className={hasLowercase ? "text-green-600" : ""}>A lowercase character</li>
-                        <li className={hasNumber ? "text-green-600" : ""}>A number</li>
+                        <li className={hasMinLength ? "text-green-600" : ""}>
+                            At least 8 characters
+                        </li>
+                        <li className={hasSpecialChar ? "text-green-600" : ""}>
+                            A special character such as !@#$%^&amp;*
+                        </li>
+                        <li className={hasUppercase ? "text-green-600" : ""}>
+                            An uppercase character
+                        </li>
+                        <li className={hasLowercase ? "text-green-600" : ""}>
+                            A lowercase character
+                        </li>
+                        <li className={hasNumber ? "text-green-600" : ""}>
+                            A number
+                        </li>
                     </ul>
                 </div>
                 {/* Retype password input */}
                 <div className="relative">
-                    <input 
+                    <input
                         id="retype-password-input"
                         value={password2}
                         type={showPassword ? "text" : "password"}
@@ -165,13 +194,14 @@ function Register() {
                             setPassword2(e.target.value);
                             if (matchError) setMatchError("");
                         }}
-                        className={`block px-3.5 pb-2.5 pt-6 pr-10 w-full text-sm text-black bg-neutral-secondary-medium appearance-none focus:outline-none focus:ring-0 peer bg-white rounded-2xl border-1 border-(--color-primary-grey) hover:border-(--color-primary-grey-dark) ${matchError ? 'border-red-500 focus:border-red-500' : 'focus:border-brand'}`}
+                        className={`block px-3.5 pb-2.5 pt-6 pr-10 w-full text-sm text-black bg-neutral-secondary-medium appearance-none focus:outline-none focus:ring-0 peer bg-white rounded-2xl border-1 border-(--color-primary-grey) hover:border-(--color-primary-grey-dark) ${matchError ? "border-red-500 focus:border-red-500" : "focus:border-brand"}`}
                         placeholder=" "
                     />
-                    <label 
-                        htmlFor={"password-input"} 
-                        className="absolute text-sm text-body duration-300 transform -translate-y-3 scale-75 top-4.5 z-10 origin-[0] start-3.5 peer-focus:text-fg-brand peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3 rtl:peer-focus:translate-x-1/4 rtl:peer-focus:left-auto text-(--color-primary-grey)">
-                            {"Retype password"}
+                    <label
+                        htmlFor={"password-input"}
+                        className="absolute text-sm text-body duration-300 transform -translate-y-3 scale-75 top-4.5 z-10 origin-[0] start-3.5 peer-focus:text-fg-brand peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3 rtl:peer-focus:translate-x-1/4 rtl:peer-focus:left-auto text-(--color-primary-grey)"
+                    >
+                        {"Retype password"}
                     </label>
                 </div>
 
@@ -182,17 +212,32 @@ function Register() {
                 )}
 
                 <div className="mb-0 -mt-2">
-                    <input type="checkbox" id="show-password-checkbox" className="accent-(--color-primary-grey) hover:accent-(--color-primary-grey-dark)" onClick={() => setShowPassword(!showPassword)} value="Show password"/>
-                    <label htmlFor="show-password-checkbox" className="text-(--color-primary-grey) hover:text-(--color-primary-grey-dark) text-sm pl-1.5">
+                    <input
+                        type="checkbox"
+                        id="show-password-checkbox"
+                        className="accent-(--color-primary-grey) hover:accent-(--color-primary-grey-dark) hover:cursor-pointer"
+                        onClick={() => setShowPassword(!showPassword)}
+                        value="Show password"
+                    />
+                    <label
+                        htmlFor="show-password-checkbox"
+                        className="text-(--color-primary-grey) hover:text-(--color-primary-grey-dark) text-sm pl-1 hover:cursor-pointer"
+                    >
                         Show password
                     </label>
                 </div>
-                
-                <input type="submit" value="Create Account" className="block bg-(--color-primary-blue) hover:bg-(--color-primary-blue-dark) text-sm text-white px-6 py-3 mt-6 rounded-2xl mx-auto w-full sm:w-auto cursor-pointer "/>
+
+                <input
+                    type="submit"
+                    value="Create Account"
+                    className="block bg-(--color-primary-blue) hover:bg-(--color-primary-blue-dark) text-sm text-white px-6 py-3 mt-6 rounded-2xl mx-auto w-full sm:w-auto cursor-pointer"
+                />
             </form>
             <div className="mt-6 text-(--color-primary-grey)">
                 <Link to={"/login"}>
-                    <div className="text-sm underline hover:text-(--color-primary-grey-dark)">Already have an account? Login</div>
+                    <div className="text-sm underline hover:text-(--color-primary-grey-dark)">
+                        Already have an account? Login
+                    </div>
                 </Link>
             </div>
         </div>
