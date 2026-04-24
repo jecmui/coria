@@ -5,7 +5,7 @@ import Landing from "~/components/auth/landing";
 export function meta({}: Route.MetaArgs) {
   return [
     { title: "bullet" },
-    { name: "description", content: "An app to help you focus on now." },
+    { name: "description", content: "Your very own digital bulletin board." },
   ];
 }
 
