@@ -1,0 +1,9 @@
+{
+    "name": "@bullet/db",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "generate": "drizzle-kit generate",
+        "migrate": "drizzle-kit migrate"
+    }
+}
