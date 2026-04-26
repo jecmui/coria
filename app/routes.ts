@@ -5,7 +5,7 @@ export default [
     route("login", "routes/auth/login.tsx"),
     route("register", "routes/auth/register.tsx"),
 
-    layout("./app/layouts/auth.tsx", [
+    layout("./layouts/auth.tsx", [
         route("in", "routes/bulletin.tsx"),
     ]),
 ] satisfies RouteConfig;

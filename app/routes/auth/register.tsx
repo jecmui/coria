@@ -104,7 +104,7 @@ function Register() {
                     />
                     <label
                         htmlFor={"email-input"}
-                        className="absolute text-sm text-body duration-300 transform -translate-y-3 scale-75 top-4.5 z-10 origin-[0] start-3.5 peer-focus:text-fg-brand peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3 rtl:peer-focus:translate-x-1/4 rtl:peer-focus:left-auto text-(--color-primary-grey)"
+                        className="absolute text-sm text-body duration-300 transform -translate-y-3 scale-75 top-4.5 z-10 origin-[0] start-3.5 peer-focus:text-fg-brand peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3 rtl:peer-focus:translate-x-1/4 rtl:peer-focus:left-auto text-(--color-primary-grey) cursor-text"
                     >
                         {"Email address"}
                     </label>
@@ -128,8 +128,8 @@ function Register() {
                         placeholder=" "
                     />
                     <label
-                        htmlFor={"email-input"}
-                        className="absolute text-sm text-body duration-300 transform -translate-y-3 scale-75 top-4.5 z-10 origin-[0] start-3.5 peer-focus:text-fg-brand peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3 rtl:peer-focus:translate-x-1/4 rtl:peer-focus:left-auto text-(--color-primary-grey)"
+                        htmlFor={"username-input"}
+                        className="absolute text-sm text-body duration-300 transform -translate-y-3 scale-75 top-4.5 z-10 origin-[0] start-3.5 peer-focus:text-fg-brand peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3 rtl:peer-focus:translate-x-1/4 rtl:peer-focus:left-auto text-(--color-primary-grey) cursor-text"
                     >
                         {"Username"}
                     </label>
@@ -154,7 +154,7 @@ function Register() {
                     />
                     <label
                         htmlFor={"password-input"}
-                        className="absolute text-sm text-body duration-300 transform -translate-y-3 scale-75 top-4.5 z-10 origin-[0] start-3.5 peer-focus:text-fg-brand peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3 rtl:peer-focus:translate-x-1/4 rtl:peer-focus:left-auto text-(--color-primary-grey)"
+                        className="absolute text-sm text-body duration-300 transform -translate-y-3 scale-75 top-4.5 z-10 origin-[0] start-3.5 peer-focus:text-fg-brand peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3 rtl:peer-focus:translate-x-1/4 rtl:peer-focus:left-auto text-(--color-primary-grey) cursor-text"
                     >
                         {"Password"}
                     </label>
@@ -198,8 +198,8 @@ function Register() {
                         placeholder=" "
                     />
                     <label
-                        htmlFor={"password-input"}
-                        className="absolute text-sm text-body duration-300 transform -translate-y-3 scale-75 top-4.5 z-10 origin-[0] start-3.5 peer-focus:text-fg-brand peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3 rtl:peer-focus:translate-x-1/4 rtl:peer-focus:left-auto text-(--color-primary-grey)"
+                        htmlFor={"retype-password-input"}
+                        className="absolute text-sm text-body duration-300 transform -translate-y-3 scale-75 top-4.5 z-10 origin-[0] start-3.5 peer-focus:text-fg-brand peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-0 peer-focus:scale-75 peer-focus:-translate-y-3 rtl:peer-focus:translate-x-1/4 rtl:peer-focus:left-auto text-(--color-primary-grey) cursor-text"
                     >
                         {"Retype password"}
                     </label>
