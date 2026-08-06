@@ -1,4 +1,4 @@
-# bullet
+# Coria
 
 Your very own digital bulletin board. Drag, resize, and pin various productivity widgets, including a 'Today' view for tasks, freeform notes, and a pomodoro timer, all onto a digital corkboard.
 
