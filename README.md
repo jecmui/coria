@@ -1,15 +1,10 @@
-# Daily Board
+# bullet
 
-A digital bulletin board for choosing what to focus on *today*. Drag, resize, and
-pin widgets — a today's-focus to-do list, freeform notes, a pomodoro timer — onto
-a felt-textured board. Full task backlog lives on a separate page; star what you
-want to see on today's board.
+Your very own digital bulletin board. Drag, resize, and pin various productivity widgets, including a 'Today' view for tasks, freeform notes, and a pomodoro timer, all onto a digital corkboard.
 
 ## Why this exists
 
-Most to-do apps show you everything, all the time. This app is built around a
-single idea: pick a small set of things to focus on today, and give them a
-physical, spatial home you arrange yourself — like sticky notes on a corkboard.
+Most to-do apps show you everything, all the time. This app is built around a single idea: pick a small set of things to focus on today, and give them a physical, spatial home you arrange yourself — like sticky notes on a corkboard. It's focused on customizability to be something that you can truly enjoy using everyday.
 
 ## Stack
 
