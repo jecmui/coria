@@ -1,0 +1,40 @@
+@import "tailwindcss";
+
+@theme {
+    /* Canvas -- the "felt board" backdrop */
+    --color-board: #e3ab7d;
+    --color-board-line: #c3834f;
+
+    /* Widgets -- "paper" cards pinned to the board */
+    --color-paper: #fbf8f1;
+    --color-paper-edge: #e8e1d0;
+
+    /* Ink */
+    --color-ink: #232320;
+    --color-ink-soft: #5c5a52;
+
+    /* Accents -- pin color doubles as a widget-type indicator */
+    --color-pin-todo: #d8a93e;
+    --color-pin-note: #89add9;
+    --color-pin-timer: #c1553d;
+
+    --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+    --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+@layer base {
+    body {
+        background-color: var(--color-board);
+        font-family: var(--font-body);
+        color: var(--color-ink);
+    }
+}
+
+.board-texture {
+    background-image: radial-gradient(
+        var(--color-board-line) 1px,
+        transparent 1px
+    );
+    background-size: 22px 22px;
+}

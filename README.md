@@ -1,87 +1,48 @@
-# Welcome to React Router!
+# Daily Board
 
-A modern, production-ready template for building full-stack React applications using React Router.
+A digital bulletin board for choosing what to focus on *today*. Drag, resize, and
+pin widgets — a today's-focus to-do list, freeform notes, a pomodoro timer — onto
+a felt-textured board. Full task backlog lives on a separate page; star what you
+want to see on today's board.
 
-[![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/remix-run/react-router-templates/tree/main/default)
+## Why this exists
 
-## Features
+Most to-do apps show you everything, all the time. This app is built around a
+single idea: pick a small set of things to focus on today, and give them a
+physical, spatial home you arrange yourself — like sticky notes on a corkboard.
 
-- 🚀 Server-side rendering
-- ⚡️ Hot Module Replacement (HMR)
-- 📦 Asset bundling and optimization
-- 🔄 Data loading and mutations
-- 🔒 TypeScript by default
-- 🎉 TailwindCSS for styling
-- 📖 [React Router docs](https://reactrouter.com/)
+## Stack
 
-## Getting Started
+- React 19 + TypeScript + Vite
+- Tailwind CSS v4
+- Zustand (state, with localStorage persistence)
+- react-rnd (drag + resize)
 
-### Installation
-
-Install the dependencies:
+## Getting started
 
 ```bash
 npm install
-```
-
-### Development
-
-Start the development server with HMR:
-
-```bash
 npm run dev
 ```
 
-Your application will be available at `http://localhost:5173`.
+## Architecture notes
 
-## Building for Production
+- `src/store/boardStore.ts` — widget positions/sizes/data, persisted to localStorage
+- `src/store/taskStore.ts` — the full task backlog + "focus today" flags
+- `src/components/board/` — the canvas, the draggable widget shell, the add-widget tray
+- `src/components/widgets/` — one component per widget type (todo, note, timer)
+- `src/components/TaskListPage.tsx` — full backlog management page
 
-Create a production build:
+Adding a new widget type: add it to `WidgetType` in `types/index.ts`, give it a
+default layout/data in `boardStore.ts`, build the component in `components/widgets/`,
+and register it in `Board.tsx` + `WidgetTray.tsx`.
 
-```bash
-npm run build
-```
+## Scope
 
-## Deployment
+**In MVP:** freeform board (drag/resize/persist), today's-focus to-do widget +
+full list page, note widget, pomodoro widget.
 
-### Docker Deployment
-
-To build and run using Docker:
-
-```bash
-docker build -t my-app .
-
-# Run the container
-docker run -p 3000:3000 my-app
-```
-
-The containerized application can be deployed to any platform that supports Docker, including:
-
-- AWS ECS
-- Google Cloud Run
-- Azure Container Apps
-- Digital Ocean App Platform
-- Fly.io
-- Railway
-
-### DIY Deployment
-
-If you're familiar with deploying Node applications, the built-in app server is production-ready.
-
-Make sure to deploy the output of `npm run build`
-
-```
-├── package.json
-├── package-lock.json (or pnpm-lock.yaml, or bun.lockb)
-├── build/
-│   ├── client/    # Static assets
-│   └── server/    # Server-side code
-```
-
-## Styling
-
-This template comes with [Tailwind CSS](https://tailwindcss.com/) already configured for a simple default starting experience. You can use whatever CSS framework you prefer.
-
----
-
-Built with ❤️ using React Router.
+**Deliberately deferred:** Todoist/calendar integration (real OAuth work, its own
+project), 20-20-20 timer (redundant with pomodoro for demo purposes), cosmetic
+stickers (low technical signal), backend persistence (currently localStorage;
+Spring Boot + Postgres is the natural next step).
