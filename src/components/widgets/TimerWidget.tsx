@@ -34,7 +34,7 @@ export function TimerWidget({ data }: TimerWidgetProps) {
   const seconds = (secondsLeft % 60).toString().padStart(2, "0");
 
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-3">
+    <div className="flex h-full flex-col items-center justify-center gap-3 overflow-hidden hover:overflow-auto">
       <span className="font-mono text-4xl font-medium tabular-nums text-ink">
         {minutes}:{seconds}
       </span>

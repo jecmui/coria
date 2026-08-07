@@ -10,7 +10,7 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
     const focusTasks = tasks.filter((t) => t.focusToday);
 
     return (
-        <div className="flex h-full flex-col font-body text-sm">
+        <div className="flex h-full flex-col font-body text-sm overflow-hidden hover:overflow-auto">
             {focusTasks.length === 0 ? (
                 <p className="flex-1 text-ink-soft">All done for today!</p>
             ) : (
