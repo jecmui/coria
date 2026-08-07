@@ -12,6 +12,7 @@ export function TaskListPage({ onBack }: TaskListPageProps) {
   const toggleFocusToday = useTaskStore((s) => s.toggleFocusToday);
   const removeTask = useTaskStore((s) => s.removeTask);
   const [draft, setDraft] = useState("");
+  const CHARACTER_LIMIT = 250;
 
   function handleAdd() {
     const title = draft.trim();
@@ -39,6 +40,7 @@ export function TaskListPage({ onBack }: TaskListPageProps) {
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleAdd()}
           placeholder="Add a task..."
+          maxLength={CHARACTER_LIMIT}
           className="flex-1 rounded-md border border-paper-edge bg-paper px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-[var(--color-pin-todo)]"
         />
         <button

@@ -5,7 +5,7 @@ import type { Task } from "../types";
 
 interface TaskState {
   tasks: Task[];
-  addTask: (title: string) => void;
+  addTask: (title: string, focusToday?: boolean) => void;
   removeTask: (id: string) => void;
   toggleDone: (id: string) => void;
   toggleFocusToday: (id: string) => void;
@@ -18,11 +18,11 @@ export const useTaskStore = create<TaskState>()(
         { id: uuid(), title: "Pick two tasks to focus on today", done: false, focusToday: true, createdAt: Date.now() },
         { id: uuid(), title: "Everything else lives in the full list", done: false, focusToday: false, createdAt: Date.now() },
       ],
-      addTask: (title) =>
+      addTask: (title, focusToday = false) =>
         set((state) => ({
           tasks: [
             ...state.tasks,
-            { id: uuid(), title, done: false, focusToday: false, createdAt: Date.now() },
+            { id: uuid(), title, done: false, focusToday, createdAt: Date.now() },
           ],
         })),
       removeTask: (id) =>
