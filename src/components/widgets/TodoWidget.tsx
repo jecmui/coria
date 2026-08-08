@@ -103,7 +103,7 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
 
                 <div className="mt-2 flex-1">
                     {focusTasks.length === 0 && !isAdding ? (
-                        <p className="text-ink-soft">All done for today!</p>
+                        <p className="text-ink-soft">All     done for today!</p>
                     ) : (
                         <ul className="space-y-1.5">
                             {focusTasks.map((task) => (
