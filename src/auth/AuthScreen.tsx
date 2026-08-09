@@ -24,7 +24,7 @@ const PASSWORD_REQUIREMENTS: PasswordRequirement[] = [
 type Mode = "signin" | "signup" | "confirmEmail";
 
 export function AuthScreen() {
-    const { signIn, signUp } = useAuth();
+    const { signIn } = useAuth();
     const [mode, setMode] = useState<Mode>("signin");
 
     const [firstName, setFirstName] = useState("");
@@ -39,6 +39,7 @@ export function AuthScreen() {
     const [cooldownSeconds, setCooldownSeconds] = useState(0);
     const [resendError, setResendError] = useState<string | null>(null);
     const [resending, setResending] = useState(false);
+    const [unverifiedExisting, setUnverifiedExisting] = useState(false);
 
     function resetMessages() {
         setError(null);
@@ -80,14 +81,43 @@ export function AuthScreen() {
         }
 
         setSubmitting(true);
-        const result =
-            mode === "signin"
-                ? await signIn(email, password)
-                : await signUp(email, password, firstName);
 
-        if (result.error) {
-            setError(result.error);
-        } else if (mode === "signup") {
+        if (mode === "signin") {
+            const result = await signIn(email, password);
+            if (result.error) setError(result.error);
+            setSubmitting(false);
+            return;
+        }
+
+        // Supabase returns a 200 with no error when signing up with an email that
+        // already has an account (to avoid leaking which emails are registered), so
+        // the only way to detect it is checking for an empty identities array on the
+        // returned user. Calling supabase directly here (rather than through
+        // useAuth().signUp) is what exposes that raw response.
+        const { data, error: signUpError } = await supabase.auth.signUp({
+            email,
+            password,
+            options: { data: { first_name: firstName } },
+        });
+
+        if (signUpError) {
+            setError(signUpError.message);
+        } else if (
+            data.user &&
+            data.user.identities &&
+            data.user.identities.length === 0
+        ) {
+            setError(
+                "An account with this email already exists. Try signing in instead.",
+            );
+        } else {
+            // A brand-new account has a created_at timestamp from right now. If the
+            // returned user was created well in the past, this signUp call actually
+            // hit an existing-but-unconfirmed account and just triggered a resend.
+            const createdRecently =
+                !!data.user &&
+                Date.now() - new Date(data.user.created_at).getTime() < 10_000;
+            setUnverifiedExisting(!createdRecently);
             setMode("confirmEmail");
             setCooldownSeconds(RESEND_COOLDOWN_SECONDS);
         }
@@ -121,6 +151,7 @@ export function AuthScreen() {
                         type="button"
                         onClick={() => {
                             setMode("signup");
+                            setUnverifiedExisting(false);
                             resetMessages();
                         }}
                         className="absolute left-4 top-4 text-xs font-medium text-ink-soft hover:text-ink hover:cursor-pointer"
@@ -129,11 +160,23 @@ export function AuthScreen() {
                     </button>
 
                     <h1 className="mb-2 font-display text-2xl font-semibold text-ink">
-                        you're almost there..
+                        almost there..
                     </h1>
-                    <p className="mb-5 text-sm text-ink-soft">
-                        Check your inbox to verify your email and sign in.
-                    </p>
+                    {unverifiedExisting ? (
+                        <p className="mb-5 text-sm text-ink-soft">
+                            Your email was previously registered, but isn't
+                            verified yet. You won't be able to sign in before
+                            verifying.
+                            <br />
+                            <br />
+                            We've sent a new email. Check your inbox to verify
+                            your email and sign in.
+                        </p>
+                    ) : (
+                        <p className="mb-5 text-sm text-ink-soft">
+                            Check your inbox to verify your email and sign in.
+                        </p>
+                    )}
 
                     <button
                         type="button"
@@ -158,6 +201,7 @@ export function AuthScreen() {
                         type="button"
                         onClick={() => {
                             setMode("signin");
+                            setUnverifiedExisting(false);
                             resetMessages();
                         }}
                         className="mt-3 w-full text-center text-xs font-medium text-ink-soft underline decoration-dotted hover:text-ink hover:cursor-pointer"
