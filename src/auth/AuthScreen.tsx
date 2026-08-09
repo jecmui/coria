@@ -83,7 +83,7 @@ export function AuthScreen() {
         const result =
             mode === "signin"
                 ? await signIn(email, password)
-                : await signUp(email, password);
+                : await signUp(email, password, firstName);
 
         if (result.error) {
             setError(result.error);

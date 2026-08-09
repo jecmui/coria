@@ -15,6 +15,7 @@ interface AuthContextValue {
     signUp: (
         email: string,
         password: string,
+        firstName: string,
     ) => Promise<{ error: string | null }>;
     signIn: (
         email: string,
@@ -46,8 +47,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return () => listener.subscription.unsubscribe();
     }, []);
 
-    async function signUp(email: string, password: string) {
-        const { error } = await supabase.auth.signUp({ email, password });
+    async function signUp(email: string, password: string, firstName: string) {
+        const { error } = await supabase.auth.signUp({
+            email,
+            password,
+            options: { data: { first_name: firstName } },
+        });
         return { error: error?.message ?? null };
     }
 
