@@ -1,7 +1,9 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useAuth } from "./AuthContext";
+import { supabase } from "../lib/supabase";
 
 const FIRST_NAME_LIMIT = 35;
+const RESEND_COOLDOWN_SECONDS = 50;
 
 interface PasswordRequirement {
     label: string;
@@ -19,9 +21,11 @@ const PASSWORD_REQUIREMENTS: PasswordRequirement[] = [
     { label: "A number", test: (pw) => /[0-9]/.test(pw) },
 ];
 
+type Mode = "signin" | "signup" | "confirmEmail";
+
 export function AuthScreen() {
     const { signIn, signUp } = useAuth();
-    const [mode, setMode] = useState<"signin" | "signup">("signin");
+    const [mode, setMode] = useState<Mode>("signin");
 
     const [firstName, setFirstName] = useState("");
     const [email, setEmail] = useState("");
@@ -30,13 +34,26 @@ export function AuthScreen() {
     const [showPassword, setShowPassword] = useState(false);
 
     const [error, setError] = useState<string | null>(null);
-    const [notice, setNotice] = useState<string | null>(null);
     const [submitting, setSubmitting] = useState(false);
+
+    const [cooldownSeconds, setCooldownSeconds] = useState(0);
+    const [resendError, setResendError] = useState<string | null>(null);
+    const [resending, setResending] = useState(false);
 
     function resetMessages() {
         setError(null);
-        setNotice(null);
+        setResendError(null);
     }
+
+    // Countdown ticks once a second while on the confirm-email screen and cooldownSeconds > 0
+    useEffect(() => {
+        if (mode !== "confirmEmail" || cooldownSeconds <= 0) return;
+        const timeout = setTimeout(
+            () => setCooldownSeconds((s) => s - 1),
+            1000,
+        );
+        return () => clearTimeout(timeout);
+    }, [mode, cooldownSeconds]);
 
     async function handleSubmit(e: FormEvent) {
         e.preventDefault();
@@ -71,15 +88,86 @@ export function AuthScreen() {
         if (result.error) {
             setError(result.error);
         } else if (mode === "signup") {
-            setNotice(
-                "Check your inbox to verify your account before signing in!",
-            );
+            setMode("confirmEmail");
+            setCooldownSeconds(RESEND_COOLDOWN_SECONDS);
         }
         setSubmitting(false);
     }
 
+    async function handleResend() {
+        if (cooldownSeconds > 0 || resending) return;
+        setResendError(null);
+        setResending(true);
+        const { error: resendErr } = await supabase.auth.resend({
+            type: "signup",
+            email,
+        });
+        if (resendErr) {
+            setResendError(resendErr.message);
+        } else {
+            setCooldownSeconds(RESEND_COOLDOWN_SECONDS);
+        }
+        setResending(false);
+    }
+
     const inputClass =
         "mb-3 w-full rounded-md border border-paper-edge bg-white px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-[var(--color-pin-todo)]";
+
+    if (mode === "confirmEmail") {
+        return (
+            <div className="flex h-screen w-screen items-center justify-center bg-board board-texture">
+                <div className="relative w-full max-w-sm rounded-lg border border-paper-edge bg-paper p-6 pt-12 shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setMode("signup");
+                            resetMessages();
+                        }}
+                        className="absolute left-4 top-4 text-xs font-medium text-ink-soft hover:text-ink hover:cursor-pointer"
+                    >
+                        ← Back
+                    </button>
+
+                    <h1 className="mb-2 font-display text-2xl font-semibold text-ink">
+                        you're almost there..
+                    </h1>
+                    <p className="mb-5 text-sm text-ink-soft">
+                        Check your inbox to verify your email and sign in.
+                    </p>
+
+                    <button
+                        type="button"
+                        onClick={handleResend}
+                        disabled={cooldownSeconds > 0 || resending}
+                        className="w-full rounded-md bg-pin-todo py-2 text-sm font-medium text-ink disabled:opacity-60"
+                    >
+                        {resending
+                            ? "Sending..."
+                            : cooldownSeconds > 0
+                              ? `Resend email (${cooldownSeconds}s)`
+                              : "Resend email"}
+                    </button>
+
+                    {resendError && (
+                        <p className="mt-3 text-xs text-pin-timer">
+                            {resendError}
+                        </p>
+                    )}
+
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setMode("signin");
+                            resetMessages();
+                        }}
+                        className="mt-3 w-full text-center text-xs font-medium text-ink-soft underline decoration-dotted hover:text-ink hover:cursor-pointer"
+                    >
+                        Already have an account? Sign in
+                    </button>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="flex h-screen w-screen items-center justify-center bg-board board-texture">
@@ -140,7 +228,7 @@ export function AuthScreen() {
                     onChange={(e) => setPassword(e.target.value)}
                     className={
                         mode === "signup"
-                            ? "mb-2 w-full rounded-md border border-paper-edge bg-white px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-[var(--color-pin-todo)]"
+                            ? "mb-2 w-full rounded-md border border-paper-edge bg-white px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-pin-todo"
                             : inputClass
                     }
                 />
@@ -188,20 +276,13 @@ export function AuthScreen() {
                 </button>
 
                 {error && (
-                    <p className="mb-3 text-xs text-[var(--color-pin-timer)]">
-                        {error}
-                    </p>
-                )}
-                {notice && (
-                    <p className="mb-3 text-xs text-[var(--color-pin-note)]">
-                        {notice}
-                    </p>
+                    <p className="mb-3 text-xs text-pin-timer">{error}</p>
                 )}
 
                 <button
                     type="submit"
                     disabled={submitting}
-                    className="w-full rounded-md bg-[var(--color-pin-todo)] py-2 text-sm font-medium text-ink disabled:opacity-60 hover:cursor-pointer"
+                    className="w-full rounded-md bg-pin-todo py-2 text-sm font-medium text-ink disabled:opacity-60 hover:cursor-pointer"
                 >
                     {submitting
                         ? "..."
