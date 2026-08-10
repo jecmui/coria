@@ -10,9 +10,13 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
     const addTask = useTaskStore((s) => s.addTask);
     const toggleDone = useTaskStore((s) => s.toggleDone);
     const focusTasks = tasks.filter((t) => t.focusToday);
+    const updateTask = useTaskStore((s) => s.updateTask);
     const [draft, setDraft] = useState("");
     const [isAdding, setIsAdding] = useState(false);
+    const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+    const [editingDraft, setEditingDraft] = useState("");
     const inputRef = useRef<HTMLInputElement>(null);
+    const editingInputRef = useRef<HTMLInputElement>(null);
     const characterCount = draft.length;
     const CHARACTER_LIMIT = 250;
 
@@ -21,6 +25,12 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
             inputRef.current?.focus();
         }
     }, [isAdding]);
+
+    useEffect(() => {
+        if (editingTaskId) {
+            editingInputRef.current?.focus();
+        }
+    }, [editingTaskId]);
 
     function handleAdd() {
         const title = draft.trim();
@@ -33,6 +43,19 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
     function handleCancel() {
         setDraft("");
         setIsAdding(false);
+    }
+
+    function handleStartEdit(taskId: string, title: string) {
+        setEditingTaskId(taskId);
+        setEditingDraft(title);
+    }
+
+    function handleSaveEdit(taskId: string) {
+        const trimmedTitle = editingDraft.trim();
+        if (!trimmedTitle) return;
+        updateTask(taskId, trimmedTitle);
+        setEditingTaskId(null);
+        setEditingDraft("");
     }
 
     return (
@@ -51,6 +74,13 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
                                         handleAdd();
                                     } else if (e.key === "Escape") {
                                         e.preventDefault();
+                                        handleCancel();
+                                    }
+                                }}
+                                onBlur={() => {
+                                    if (draft.trim()) {
+                                        handleAdd();
+                                    } else {
                                         handleCancel();
                                     }
                                 }}
@@ -117,15 +147,47 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
                                         onChange={() => toggleDone(task.id)}
                                         className="mt-0.5 h-3.5 w-3.5 accent-pin-todo"
                                     />
-                                    <span
-                                        className={
-                                            task.done
-                                                ? "min-w-0 wrap-break-word text-ink-soft line-through"
-                                                : "min-w-0 wrap-break-word text-ink"
-                                        }
-                                    >
-                                        {task.title}
-                                    </span>
+                                    {editingTaskId === task.id ? (
+                                        <input
+                                            ref={editingInputRef}
+                                            value={editingDraft}
+                                            onChange={(e) =>
+                                                setEditingDraft(e.target.value)
+                                            }
+                                            onKeyDown={(e) => {
+                                                if (e.key === "Enter") {
+                                                    e.preventDefault();
+                                                    handleSaveEdit(task.id);
+                                                } else if (e.key === "Escape") {
+                                                    e.preventDefault();
+                                                    setEditingTaskId(null);
+                                                    setEditingDraft("");
+                                                }
+                                            }}
+                                            onBlur={() => {
+                                                handleSaveEdit(task.id);
+                                            }}
+                                            maxLength={250}
+                                            className="min-w-0 flex-1 border-none focus:border-none outline-none bg-paper text-sm text-ink text-wrap"
+                                        />
+                                    ) : (
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                handleStartEdit(
+                                                    task.id,
+                                                    task.title,
+                                                )
+                                            }
+                                            className={`min-w-0 flex-1 text-left hover:cursor-text ${
+                                                task.done
+                                                    ? "wrap-break-word text-ink-soft line-through"
+                                                    : "wrap-break-word text-ink"
+                                            }`}
+                                        >
+                                            {task.title}
+                                        </button>
+                                    )}
                                 </li>
                             ))}
                         </ul>
