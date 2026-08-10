@@ -86,13 +86,6 @@ export default function App() {
 
     return (
         <div className="relative h-screen w-screen overflow-hidden bg-board">
-            <button
-                onClick={signOut}
-                className="fixed right-4 top-4 z-60 rounded-full border border-paper-edge bg-paper px-3 py-1.5 font-body text-xs font-medium text-ink-soft shadow-[0_8px_24px_rgba(0,0,0,0.35)] hover:text-ink hover:cursor-pointer"
-            >
-                Sign out
-            </button>
-
             <div ref={navRef} className="fixed left-0 top-0 z-70 h-screen">
                 {!navOpen ? (
                     <button
@@ -106,7 +99,7 @@ export default function App() {
                 ) : (
                     <div className="flex h-full w-56 flex-col rounded-r-2xl bg-paper/95 p-2 shadow-[0_8px_24px_rgba(0,0,0,0.2)] backdrop-blur">
                         <div className="mb-2 flex items-center justify-between px-2 py-1 border-b border-paper-edge">
-                            <span className="font-body text-md font-medium text-ink-soft">
+                            <span className="font-body text-sm font-medium text-ink-soft">
                                 {firstName
                                     ? `Welcome, ${firstName}`
                                     : "Welcome"}
@@ -125,11 +118,10 @@ export default function App() {
                             type="button"
                             onClick={() => {
                                 setView("board");
-                                setNavOpen(false);
                             }}
                             className={`rounded-xl px-3 py-2 text-left font-body text-sm font-medium hover:cursor-pointer transition ${
                                 view === "board"
-                                    ? "bg-board text-ink"
+                                    ? "bg-board/30 text-ink"
                                     : "text-ink-soft hover:bg-black/5 hover:text-ink"
                             }`}
                         >
@@ -139,11 +131,10 @@ export default function App() {
                             type="button"
                             onClick={() => {
                                 setView("tasks");
-                                setNavOpen(false);
                             }}
                             className={`rounded-xl px-3 py-2 text-left font-body text-sm font-medium hover:cursor-pointer transition ${
                                 view === "tasks"
-                                    ? "bg-board text-ink"
+                                    ? "bg-board/30 text-ink"
                                     : "text-ink-soft hover:bg-black/5 hover:text-ink"
                             }`}
                         >
@@ -154,11 +145,10 @@ export default function App() {
                             onClick={() => {
                                 setView("settings");
                                 setSettingsSection("account");
-                                setNavOpen(false);
                             }}
                             className={`rounded-xl px-3 py-2 text-left font-body text-sm font-medium hover:cursor-pointer transition ${
                                 view === "settings"
-                                    ? "bg-board text-ink"
+                                    ? "bg-board/30 text-ink"
                                     : "text-ink-soft hover:bg-black/5 hover:text-ink"
                             }`}
                         >
@@ -180,7 +170,7 @@ export default function App() {
                                         onClick={() => setSettingsSection(key)}
                                         className={`flex w-full items-center rounded-xl px-3 py-2 text-left font-body text-sm transition ${
                                             settingsSection === key
-                                                ? "bg-board text-ink"
+                                                ? "bg-board/30 text-ink"
                                                 : "text-ink-soft hover:bg-black/5 hover:text-ink"
                                         }`}
                                     >
@@ -189,6 +179,14 @@ export default function App() {
                                 ))}
                             </div>
                         )}
+
+                        <button
+                            type="button"
+                            onClick={() => signOut()}
+                            className="mt-auto rounded-xl border border-paper-edge bg-board/30 px-3 py-2 text-left font-body text-sm font-medium text-ink-soft transition hover:bg-black/5 hover:cursor-pointer hover:text-ink"
+                        >
+                            Sign out
+                        </button>
                     </div>
                 )}
             </div>

@@ -39,16 +39,22 @@ export function SettingsPage({
                             Manage your workspace
                         </h1>
                     </div>
+                    <button
+                        type="button"
+                        className="rounded-full border border-paper-edge bg-paper px-4 py-2 font-body text-sm font-semibold text-ink shadow-[0_8px_24px_rgba(0,0,0,0.15)] transition hover:cursor-pointer hover:bg-paper/90"
+                    >
+                        Save Changes
+                    </button>
                 </div>
 
                 <div className="flex flex-1 flex-col gap-6 lg:flex-row">
-                    <div className="flex min-h-[220px] flex-col rounded-2xl border border-paper-edge bg-board/50 p-3 lg:w-56">
+                    <div className="flex min-h-55 flex-col rounded-2xl border border-paper-edge bg-board/50 p-3 lg:w-56">
                         {SECTIONS.map((section) => (
                             <button
                                 key={section.key}
                                 type="button"
                                 onClick={() => onSelectSection(section.key)}
-                                className={`rounded-xl px-3 py-2 text-left font-body text-sm font-medium transition ${
+                                className={`rounded-xl px-3 py-2 text-left font-body text-sm font-medium transition hover:cursor-pointer ${
                                     activeSection === section.key
                                         ? "bg-paper text-ink shadow-sm"
                                         : "text-ink-soft hover:bg-paper/70 hover:text-ink"
@@ -244,13 +250,6 @@ export function SettingsPage({
                     </div>
                 </div>
             </div>
-
-            <button
-                type="button"
-                className="fixed bottom-4 right-4 z-40 rounded-full border border-paper-edge bg-paper px-4 py-2 font-body text-sm font-semibold text-ink shadow-[0_8px_24px_rgba(0,0,0,0.25)] transition hover:cursor-pointer hover:bg-paper/90"
-            >
-                Save Changes
-            </button>
         </div>
     );
 }
