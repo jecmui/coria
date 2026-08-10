@@ -2,7 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { Board } from "./components/board/Board";
 import { AddWidget } from "./components/board/AddWidget";
 import { TaskListPage } from "./components/TaskListPage";
-import { SettingsPage, type SettingsSection } from "./components/SettingsPage";
+import {
+    SettingsPage,
+    type SettingsSection,
+    type SettingsPageHandle,
+} from "./components/SettingsPage";
 import { useAuth } from "./auth/AuthContext";
 import { AuthScreen } from "./auth/AuthScreen";
 import { useTaskStore } from "./store/taskStore";
@@ -18,10 +22,12 @@ export default function App() {
     const [settingsSection, setSettingsSection] =
         useState<SettingsSection>("account");
     const navRef = useRef<HTMLDivElement>(null);
+    const settingsPageRef = useRef<SettingsPageHandle>(null);
 
     const loadTasks = useTaskStore((s) => s.loadTasks);
     const clearTasks = useTaskStore((s) => s.clear);
     const loadWidgets = useBoardStore((s) => s.loadWidgets);
+    const loadPomodoroSettings = useBoardStore((s) => s.loadPomodoroSettings);
     const clearWidgets = useBoardStore((s) => s.clear);
     const tasksLoading = useTaskStore((s) => s.loading);
     const widgetsLoading = useBoardStore((s) => s.loading);
@@ -31,6 +37,7 @@ export default function App() {
         if (user) {
             loadTasks(user.id);
             loadWidgets(user.id);
+            loadPomodoroSettings(user.id);
         } else {
             clearTasks();
             clearWidgets();
@@ -38,6 +45,17 @@ export default function App() {
         // Re-run whenever the logged-in user changes (login, logout, or switching accounts)
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id]);
+
+    // Any navigation away from Settings (switching views, switching settings
+    // tabs, or signing out) is routed through this so unsaved changes on the
+    // settings page can prompt for confirmation before it's discarded.
+    function guardedNavigate(action: () => void) {
+        if (view === "settings" && settingsPageRef.current) {
+            settingsPageRef.current.requestNavigation(action);
+        } else {
+            action();
+        }
+    }
 
     useEffect(() => {
         if (!navOpen) return;
@@ -116,9 +134,9 @@ export default function App() {
 
                         <button
                             type="button"
-                            onClick={() => {
-                                setView("board");
-                            }}
+                            onClick={() =>
+                                guardedNavigate(() => setView("board"))
+                            }
                             className={`rounded-xl px-3 py-2 text-left font-body text-sm font-medium hover:cursor-pointer transition ${
                                 view === "board"
                                     ? "bg-board/30 text-ink"
@@ -129,9 +147,9 @@ export default function App() {
                         </button>
                         <button
                             type="button"
-                            onClick={() => {
-                                setView("tasks");
-                            }}
+                            onClick={() =>
+                                guardedNavigate(() => setView("tasks"))
+                            }
                             className={`rounded-xl px-3 py-2 text-left font-body text-sm font-medium hover:cursor-pointer transition ${
                                 view === "tasks"
                                     ? "bg-board/30 text-ink"
@@ -142,10 +160,12 @@ export default function App() {
                         </button>
                         <button
                             type="button"
-                            onClick={() => {
-                                setView("settings");
-                                setSettingsSection("account");
-                            }}
+                            onClick={() =>
+                                guardedNavigate(() => {
+                                    setView("settings");
+                                    setSettingsSection("account");
+                                })
+                            }
                             className={`rounded-xl px-3 py-2 text-left font-body text-sm font-medium hover:cursor-pointer transition ${
                                 view === "settings"
                                     ? "bg-board/30 text-ink"
@@ -160,14 +180,18 @@ export default function App() {
                                 {(
                                     [
                                         ["account", "Account"],
-                                        ["preferences", "Preferences"],
+                                        ["preferences", "Appearance"],
                                         ["pomodoro", "Pomodoro"],
                                     ] as const
                                 ).map(([key, label]) => (
                                     <button
                                         key={key}
                                         type="button"
-                                        onClick={() => setSettingsSection(key)}
+                                        onClick={() =>
+                                            guardedNavigate(() =>
+                                                setSettingsSection(key),
+                                            )
+                                        }
                                         className={`flex w-full items-center rounded-xl px-3 py-2 text-left font-body text-sm transition ${
                                             settingsSection === key
                                                 ? "bg-board/30 text-ink"
@@ -182,7 +206,11 @@ export default function App() {
 
                         <button
                             type="button"
-                            onClick={() => signOut()}
+                            onClick={() =>
+                                guardedNavigate(() => {
+                                    void signOut();
+                                })
+                            }
                             className="mt-auto rounded-xl border border-paper-edge bg-board/30 px-3 py-2 text-left font-body text-sm font-medium text-ink-soft transition hover:bg-black/5 hover:cursor-pointer hover:text-ink"
                         >
                             Sign out
@@ -197,6 +225,7 @@ export default function App() {
                 </div>
             ) : view === "settings" ? (
                 <SettingsPage
+                    ref={settingsPageRef}
                     activeSection={settingsSection}
                     onSelectSection={setSettingsSection}
                 />

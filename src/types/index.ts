@@ -26,9 +26,17 @@ export interface TodoWidgetData {
   maxItemsShown: number;
 }
 
-export interface TimerData {
+export interface PomodoroSettings {
+  focusSeconds: number;
+  shortBreakSeconds: number;
+  longBreakSeconds: number;
+  longBreakInterval: number;
+  autoStartBreaks: boolean;
+  autoStartFocus: boolean;
+}
+
+export interface TimerData extends PomodoroSettings {
   mode: "pomodoro";
-  durationSeconds: number;
 }
 
 export interface Task {

@@ -1,6 +1,15 @@
 import { create } from "zustand";
 import { supabase } from "../lib/supabase";
-import type { BoardWidget, WidgetLayout, WidgetType } from "../types";
+import type { BoardWidget, PomodoroSettings, WidgetLayout, WidgetType } from "../types";
+
+const DEFAULT_POMODORO_SETTINGS: PomodoroSettings = {
+  focusSeconds: 25 * 60,
+  shortBreakSeconds: 5 * 60,
+  longBreakSeconds: 15 * 60,
+  longBreakInterval: 4,
+  autoStartBreaks: false,
+  autoStartFocus: false,
+};
 
 interface WidgetRow {
   id: string;
@@ -22,14 +31,14 @@ const DEFAULT_LAYOUTS: Record<WidgetType, WidgetLayout> = {
   timer: { x: 40, y: 420, width: 260, height: 220 },
 };
 
-function defaultDataFor(type: WidgetType): BoardWidget["data"] {
+function defaultDataFor(type: WidgetType, pomodoroSettings: PomodoroSettings): BoardWidget["data"] {
   switch (type) {
     case "todo":
       return { maxItemsShown: 6 };
     case "note":
       return { text: "" };
     case "timer":
-      return { mode: "pomodoro", durationSeconds: 25 * 60 };
+      return { mode: "pomodoro", ...pomodoroSettings };
   }
 }
 
@@ -53,7 +62,12 @@ interface BoardState {
   widgets: BoardWidget[];
   userId: string | null;
   loading: boolean;
+  pomodoroSettings: PomodoroSettings;
+  pomodoroLoading: boolean;
+  pomodoroError: string | null;
   loadWidgets: (userId: string) => Promise<void>;
+  loadPomodoroSettings: (userId: string) => Promise<void>;
+  setPomodoroSettings: (settings: PomodoroSettings) => void;
   clear: () => void;
   addWidget: (type: WidgetType) => void;
   removeWidget: (id: string) => void;
@@ -66,6 +80,9 @@ export const useBoardStore = create<BoardState>((set, get) => ({
   widgets: [],
   userId: null,
   loading: false,
+  pomodoroSettings: DEFAULT_POMODORO_SETTINGS,
+  pomodoroLoading: false,
+  pomodoroError: null,
 
   loadWidgets: async (userId) => {
     set({ loading: true, userId });
@@ -92,7 +109,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
         type: "todo" as WidgetType,
         layout: DEFAULT_LAYOUTS.todo,
         z_index: 1,
-        data: defaultDataFor("todo"),
+        data: defaultDataFor("todo", get().pomodoroSettings),
       },
       {
         user_id: userId,
@@ -115,10 +132,48 @@ export const useBoardStore = create<BoardState>((set, get) => ({
     set({ widgets: (seeded as WidgetRow[]).map(rowToWidget), loading: false });
   },
 
-  clear: () => set({ widgets: [], userId: null }),
+  loadPomodoroSettings: async (userId) => {
+    set({ pomodoroLoading: true, pomodoroError: null });
+    const { data, error } = await supabase
+      .from("profiles")
+      .select(
+        "focus_seconds, short_break_seconds, long_break_seconds, long_break_interval, auto_start_breaks, auto_start_focus",
+      )
+      .eq("id", userId)
+      .single();
+
+    if (error) {
+      console.error("Failed to load Pomodoro settings:", error.message);
+      set({ pomodoroLoading: false, pomodoroError: error.message });
+      return;
+    }
+
+    set({
+      pomodoroSettings: {
+        focusSeconds: data.focus_seconds ?? DEFAULT_POMODORO_SETTINGS.focusSeconds,
+        shortBreakSeconds: data.short_break_seconds ?? DEFAULT_POMODORO_SETTINGS.shortBreakSeconds,
+        longBreakSeconds: data.long_break_seconds ?? DEFAULT_POMODORO_SETTINGS.longBreakSeconds,
+        longBreakInterval: data.long_break_interval ?? DEFAULT_POMODORO_SETTINGS.longBreakInterval,
+        autoStartBreaks: data.auto_start_breaks ?? DEFAULT_POMODORO_SETTINGS.autoStartBreaks,
+        autoStartFocus: data.auto_start_focus ?? DEFAULT_POMODORO_SETTINGS.autoStartFocus,
+      },
+      pomodoroLoading: false,
+    });
+  },
+
+  setPomodoroSettings: (settings) => set({ pomodoroSettings: settings }),
+
+  clear: () =>
+    set({
+      widgets: [],
+      userId: null,
+      pomodoroSettings: DEFAULT_POMODORO_SETTINGS,
+      pomodoroLoading: false,
+      pomodoroError: null,
+    }),
 
   addWidget: (type) => {
-    const { userId, widgets } = get();
+    const { userId, widgets, pomodoroSettings } = get();
     if (!userId) return;
     const maxZ = Math.max(0, ...widgets.map((w) => w.zIndex));
 
@@ -128,7 +183,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       type,
       layout: { ...DEFAULT_LAYOUTS[type] },
       zIndex: maxZ + 1,
-      data: defaultDataFor(type),
+      data: defaultDataFor(type, pomodoroSettings),
     };
     set((state) => ({ widgets: [...state.widgets, optimisticWidget] }));
 

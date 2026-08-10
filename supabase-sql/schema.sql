@@ -60,3 +60,13 @@ $$ language plpgsql security definer;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
+
+-- Pomodoro settings, edited from the Settings > Pomodoro page and applied
+-- to new Pomodoro widgets when they're added to the board.
+alter table profiles
+  add column focus_seconds integer not null default 1500,
+  add column short_break_seconds integer not null default 300,
+  add column long_break_seconds integer not null default 900,
+  add column long_break_interval integer not null default 4,
+  add column auto_start_breaks boolean not null default false,
+  add column auto_start_focus boolean not null default false;
