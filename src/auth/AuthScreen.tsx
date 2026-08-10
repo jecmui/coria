@@ -584,7 +584,7 @@ export function AuthScreen() {
                 <button
                     type="submit"
                     disabled={submitting}
-                    className="w-full rounded-md bg-pin-todo py-2 text-sm font-medium text-ink disabled:opacity-60 hover:cursor-pointer"
+                    className="w-full rounded-md bg-pin-todo py-2 text-sm font-medium text-ink disabled:opacity-60 hover:cursor-pointer mb-2"
                 >
                     {submitting
                         ? "..."
@@ -600,7 +600,7 @@ export function AuthScreen() {
                             setMode("requestPasswordReset");
                             resetMessages();
                         }}
-                        className="mt-3 w-full text-center text-xs font-medium text-ink-soft underline decoration-dotted hover:text-ink hover:cursor-pointer"
+                        className="mt-1 w-full text-center text-xs font-medium text-ink-soft underline decoration-dotted hover:text-ink hover:cursor-pointer"
                     >
                         Forgot password?
                     </button>
