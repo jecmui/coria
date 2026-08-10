@@ -88,13 +88,13 @@ export function TaskListPage({ onBack }: TaskListPageProps) {
                 {tasks.map((task) => (
                     <li
                         key={task.id}
-                        className="flex items-center gap-3 rounded-md bg-paper px-3 py-2 text-sm"
+                        className="flex items-start gap-3 rounded-md bg-paper px-3 py-2 text-sm"
                     >
                         <input
                             type="checkbox"
                             checked={task.done}
                             onChange={() => toggleDone(task.id)}
-                            className="h-3.5 w-3.5 accent-pin-todo"
+                            className="mt-1 h-3.5 w-3.5 shrink-0 accent-pin-todo"
                         />
                         {editingTaskId === task.id ? (
                             <input
@@ -125,7 +125,7 @@ export function TaskListPage({ onBack }: TaskListPageProps) {
                                 onClick={() =>
                                     handleStartEdit(task.id, task.title)
                                 }
-                                className={`flex-1 text-left ${task.done ? "text-ink-soft line-through" : "text-ink"}`}
+                                className={`min-w-0 flex-1 text-left wrap-break-word ${task.done ? "text-ink-soft line-through" : "text-ink"}`}
                             >
                                 {task.title}
                             </button>
