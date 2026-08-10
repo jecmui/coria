@@ -21,7 +21,12 @@ const PASSWORD_REQUIREMENTS: PasswordRequirement[] = [
     { label: "A number", test: (pw) => /[0-9]/.test(pw) },
 ];
 
-type Mode = "signin" | "signup" | "confirmEmail";
+type Mode =
+    | "signin"
+    | "signup"
+    | "confirmEmail"
+    | "requestPasswordReset"
+    | "resetPassword";
 
 export function AuthScreen() {
     const { signIn } = useAuth();
@@ -34,6 +39,7 @@ export function AuthScreen() {
     const [showPassword, setShowPassword] = useState(false);
 
     const [error, setError] = useState<string | null>(null);
+    const [successMessage, setSuccessMessage] = useState<string | null>(null);
     const [submitting, setSubmitting] = useState(false);
 
     const [cooldownSeconds, setCooldownSeconds] = useState(0);
@@ -44,6 +50,7 @@ export function AuthScreen() {
     function resetMessages() {
         setError(null);
         setResendError(null);
+        setSuccessMessage(null);
     }
 
     // Countdown ticks once a second while on the confirm-email screen and cooldownSeconds > 0
@@ -55,6 +62,51 @@ export function AuthScreen() {
         );
         return () => clearTimeout(timeout);
     }, [mode, cooldownSeconds]);
+
+    useEffect(() => {
+        let active = true;
+
+        async function detectRecoverySession() {
+            const {
+                data: { session },
+                error,
+            } = await supabase.auth.getSession();
+            if (!active) return;
+
+            if (error) {
+                setError(error.message);
+                return;
+            }
+
+            if (session) {
+                setMode("resetPassword");
+                return;
+            }
+
+            const hash = window.location.hash;
+            if (
+                hash.includes("access_token") ||
+                hash.includes("type=recovery")
+            ) {
+                setMode("resetPassword");
+            }
+        }
+
+        void detectRecoverySession();
+
+        const {
+            data: { subscription },
+        } = supabase.auth.onAuthStateChange((event) => {
+            if (event === "PASSWORD_RECOVERY") {
+                setMode("resetPassword");
+            }
+        });
+
+        return () => {
+            active = false;
+            subscription.unsubscribe();
+        };
+    }, []);
 
     async function handleSubmit(e: FormEvent) {
         e.preventDefault();
@@ -140,6 +192,71 @@ export function AuthScreen() {
         setResending(false);
     }
 
+    async function handlePasswordResetRequest(e: FormEvent) {
+        e.preventDefault();
+        resetMessages();
+
+        if (!email.trim()) {
+            setError("Please enter your email.");
+            return;
+        }
+
+        setSubmitting(true);
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(
+            email,
+            {
+                redirectTo: `${window.location.origin}/`,
+            },
+        );
+
+        if (resetError) {
+            setError(resetError.message);
+        } else {
+            setSuccessMessage("Check your inbox for a password reset link.");
+            setMode("signin");
+        }
+
+        setSubmitting(false);
+    }
+
+    async function handleResetPassword(e: FormEvent) {
+        e.preventDefault();
+        resetMessages();
+
+        const unmetRequirement = PASSWORD_REQUIREMENTS.find(
+            (req) => !req.test(password),
+        );
+        if (unmetRequirement) {
+            setError("Your password doesn't meet all the requirements above.");
+            return;
+        }
+        if (password !== confirmPassword) {
+            setError("Passwords don't match.");
+            return;
+        }
+
+        setSubmitting(true);
+        const { error: updateError } = await supabase.auth.updateUser({
+            password,
+        });
+
+        if (updateError) {
+            setError(updateError.message);
+        } else {
+            await supabase.auth.signOut();
+            setPassword("");
+            setConfirmPassword("");
+            setShowPassword(false);
+            setMode("signin");
+            setSuccessMessage("Successfully reset passowrd");
+            window.setTimeout(() => {
+                setSuccessMessage(null);
+            }, 3000);
+        }
+
+        setSubmitting(false);
+    }
+
     const inputClass =
         "mb-3 w-full rounded-md border border-paper-edge bg-white px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-[var(--color-pin-todo)]";
 
@@ -213,8 +330,149 @@ export function AuthScreen() {
         );
     }
 
+    if (mode === "requestPasswordReset") {
+        return (
+            <div className="flex h-screen w-screen items-center justify-center bg-board board-texture">
+                <div className="relative w-full max-w-sm rounded-lg border border-paper-edge bg-paper p-6 pt-12 shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setMode("signin");
+                            resetMessages();
+                        }}
+                        className="absolute left-4 top-4 text-xs font-medium text-ink-soft hover:text-ink hover:cursor-pointer"
+                    >
+                        ← Back
+                    </button>
+
+                    <h1 className="mb-2 font-display text-2xl font-semibold text-ink">
+                        request password reset
+                    </h1>
+                    <p className="mb-5 text-sm text-ink-soft">
+                        Enter your email for a link to reset your password.
+                    </p>
+
+                    <form onSubmit={handlePasswordResetRequest} noValidate>
+                        <label className="mb-1 block text-xs font-medium text-ink-soft">
+                            Email
+                        </label>
+                        <input
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            className={inputClass}
+                        />
+
+                        {error && (
+                            <p className="mb-3 text-xs text-pin-timer">
+                                {error}
+                            </p>
+                        )}
+
+                        {successMessage && (
+                            <p className="mb-3 text-xs text-pin-todo">
+                                {successMessage}
+                            </p>
+                        )}
+
+                        <button
+                            type="submit"
+                            disabled={submitting}
+                            className="w-full rounded-md bg-pin-todo py-2 text-sm font-medium text-ink disabled:opacity-60 hover:cursor-pointer"
+                        >
+                            {submitting ? "..." : "Send Email"}
+                        </button>
+                    </form>
+                </div>
+            </div>
+        );
+    }
+
+    if (mode === "resetPassword") {
+        return (
+            <div className="flex h-screen w-screen items-center justify-center bg-board board-texture">
+                <form
+                    onSubmit={handleResetPassword}
+                    noValidate
+                    className="w-full max-w-sm rounded-lg border border-paper-edge bg-paper p-6 shadow-[0_8px_24px_rgba(0,0,0,0.35)]"
+                >
+                    <h1 className="mb-1 font-display text-2xl font-semibold text-ink">
+                        reset password
+                    </h1>
+                    <p className="mb-5 text-sm text-ink-soft">
+                        Choose a new password for your account.
+                    </p>
+
+                    <label className="mb-1 block text-xs font-medium text-ink-soft">
+                        Password
+                    </label>
+                    <input
+                        type={showPassword ? "text" : "password"}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="mb-2 w-full rounded-md border border-paper-edge bg-white px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-pin-todo"
+                    />
+
+                    <ul className="mb-3 space-y-0.5">
+                        {PASSWORD_REQUIREMENTS.map((req) => {
+                            const satisfied = req.test(password);
+                            return (
+                                <li
+                                    key={req.label}
+                                    className={`text-[11px] transition-colors ${
+                                        satisfied
+                                            ? "text-pin-todo"
+                                            : "text-ink-soft"
+                                    }`}
+                                >
+                                    • {req.label}
+                                </li>
+                            );
+                        })}
+                    </ul>
+
+                    <label className="mb-1 block text-xs font-medium text-ink-soft">
+                        Retype password
+                    </label>
+                    <input
+                        type={showPassword ? "text" : "password"}
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        className={inputClass}
+                    />
+
+                    <button
+                        type="button"
+                        onClick={() => setShowPassword((s) => !s)}
+                        className="mb-4 -mt-1 text-xs font-medium text-ink-soft underline decoration-dotted hover:text-ink hover:cursor-pointer"
+                    >
+                        {showPassword ? "Hide password" : "Show password"}
+                    </button>
+
+                    {error && (
+                        <p className="mb-3 text-xs text-pin-timer">{error}</p>
+                    )}
+
+                    <button
+                        type="submit"
+                        disabled={submitting}
+                        className="w-full rounded-md bg-pin-todo py-2 text-sm font-medium text-ink disabled:opacity-60 hover:cursor-pointer"
+                    >
+                        {submitting ? "..." : "Reset password"}
+                    </button>
+                </form>
+            </div>
+        );
+    }
+
     return (
         <div className="flex h-screen w-screen items-center justify-center bg-board board-texture">
+            {successMessage && (
+                <div className="fixed left-1/2 top-4 z-50 -translate-x-1/2 rounded-md border border-paper-edge bg-paper px-4 py-2 text-sm font-medium text-ink shadow-[0_8px_24px_rgba(0,0,0,0.25)]">
+                    {successMessage}
+                </div>
+            )}
+
             <form
                 onSubmit={handleSubmit}
                 noValidate
@@ -335,13 +593,26 @@ export function AuthScreen() {
                           : "Sign up"}
                 </button>
 
+                {mode === "signin" && (
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setMode("requestPasswordReset");
+                            resetMessages();
+                        }}
+                        className="mt-3 w-full text-center text-xs font-medium text-ink-soft underline decoration-dotted hover:text-ink hover:cursor-pointer"
+                    >
+                        Forgot password?
+                    </button>
+                )}
+
                 <button
                     type="button"
                     onClick={() => {
                         setMode(mode === "signin" ? "signup" : "signin");
                         resetMessages();
                     }}
-                    className="mt-3 w-full text-center text-xs font-medium text-ink-soft underline decoration-dotted hover:text-ink hover:cursor-pointer"
+                    className="mt-1 w-full text-center text-xs font-medium text-ink-soft underline decoration-dotted hover:text-ink hover:cursor-pointer"
                 >
                     {mode === "signin"
                         ? "Need an account? Sign up"
