@@ -37,7 +37,7 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
 
     return (
         <div className="flex h-full flex-col">
-            <div className="overflow-x-hidden overflow-y-hidden font-body text-sm hover:overflow-y-auto scrollbar-gutter-stable scrollbar-thin scrollbar-thumb-pin-todo scrollbar-track-transparent">
+            <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-hidden font-body text-sm hover:overflow-y-auto scrollbar-gutter-stable scrollbar-thin scrollbar-thumb-pin-todo scrollbar-track-transparent">
                 <div className="flex items-center gap-2">
                     {isAdding ? (
                         <>
@@ -103,7 +103,7 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
 
                 <div className="mt-2 flex-1">
                     {focusTasks.length === 0 && !isAdding ? (
-                        <p className="text-ink-soft">All     done for today!</p>
+                        <p className="text-ink-soft">All done for today!</p>
                     ) : (
                         <ul className="space-y-1.5">
                             {focusTasks.map((task) => (
@@ -120,8 +120,8 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
                                     <span
                                         className={
                                             task.done
-                                                ? "min-w-0 break-words text-ink-soft line-through"
-                                                : "min-w-0 break-words text-ink"
+                                                ? "min-w-0 wrap-break-word text-ink-soft line-through"
+                                                : "min-w-0 wrap-break-word text-ink"
                                         }
                                     >
                                         {task.title}
@@ -132,11 +132,11 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
                     )}
                 </div>
             </div>
-            <div className="flex place-content-between">
+            <div className="sticky bottom-0 bg-paper/95 pt-2">
                 <button
                     type="button"
                     onClick={onOpenFullList}
-                    className="mt-2 self-start text-xs font-medium text-ink-soft underline decoration-dotted hover:text-ink hover:cursor-pointer"
+                    className="w-full text-left text-xs font-medium text-ink-soft underline decoration-dotted hover:text-ink hover:cursor-pointer"
                 >
                     Open full list
                 </button>
