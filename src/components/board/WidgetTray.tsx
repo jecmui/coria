@@ -16,7 +16,7 @@ export function WidgetTray() {
                 <button
                     key={opt.type}
                     onClick={() => addWidget(opt.type)}
-                    className="flex items-center gap-1.5 rounded-full px-3 py-1.5 font-body text-xs text-nowrap font-medium text-ink transition hover:bg-black/5"
+                    className="flex items-center gap-1.5 rounded-full px-3 py-1.5 font-body text-xs text-nowrap font-medium text-ink transition hover:bg-black/5 hover:cursor-pointer"
                 >
                     <span
                         className="h-2 w-2 rounded-full invisible sm:visible"
