@@ -23,7 +23,7 @@ export function Board({ onOpenFullList }: BoardProps) {
   const bringToFront = useBoardStore((s) => s.bringToFront);
 
   return (
-    <div className="board-texture relative h-full w-full overflow-auto">
+    <div className="board-texture relative z-0 h-full w-full overflow-auto">
       {widgets.map((widget) => (
         <Rnd
           key={widget.id}

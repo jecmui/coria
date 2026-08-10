@@ -69,11 +69,13 @@ export default function App() {
         <div className="relative h-screen w-screen overflow-hidden bg-board">
             <button
                 onClick={signOut}
-                className="fixed right-4 top-4 z-50 rounded-full border border-paper-edge bg-paper px-3 py-1.5 font-body text-xs font-medium text-ink-soft hover:text-ink hover:cursor-pointer"
+                className="fixed right-4 top-4 z-[60] rounded-full border border-paper-edge bg-paper px-3 py-1.5 font-body text-xs font-medium text-ink-soft shadow-[0_8px_24px_rgba(0,0,0,0.35)] hover:text-ink hover:cursor-pointer"
             >
                 Sign out
             </button>
-            <Board onOpenFullList={() => setView("tasks")} />
+            <div className="relative z-0 h-full w-full">
+                <Board onOpenFullList={() => setView("tasks")} />
+            </div>
             <AddWidget />
         </div>
     );
