@@ -71,7 +71,7 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
                             <button
                                 type="button"
                                 onClick={() => setIsAdding(true)}
-                                className="flex min-w-0 flex-1 items-center hover:cursor-pointer"
+                                className="flex min-w-0 flex-1 items-center hover:cursor-pointer text-ink-soft"
                             >
                                 <span className="pr-1">
                                     <img
