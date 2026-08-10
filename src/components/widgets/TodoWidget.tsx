@@ -132,7 +132,7 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
                 ) : null}
 
                 <div className="mt-2 flex-1">
-                    {focusTasks.length === 0 && !isAdding ? (
+                    {focusTasks.length === 0 ? (
                         <p className="text-ink-soft/80 items-center pt-2">
                             All done for today!
                         </p>
@@ -141,7 +141,7 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
                             {focusTasks.map((task) => (
                                 <li
                                     key={task.id}
-                                    className="flex items-start gap-2"
+                                    className="flex items-center gap-2"
                                 >
                                     <input
                                         type="checkbox"
