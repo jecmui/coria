@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Board } from "./components/board/Board";
-import { WidgetTray } from "./components/board/WidgetTray";
+import { AddWidget } from "./components/board/AddWidget";
 import { TaskListPage } from "./components/TaskListPage";
 import { useAuth } from "./auth/AuthContext";
 import { AuthScreen } from "./auth/AuthScreen";
@@ -74,7 +74,7 @@ export default function App() {
                 Sign out
             </button>
             <Board onOpenFullList={() => setView("tasks")} />
-            <WidgetTray />
+            <AddWidget />
         </div>
     );
 }
