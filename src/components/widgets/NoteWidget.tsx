@@ -14,7 +14,7 @@ export function NoteWidget({ widgetId, data }: NoteWidgetProps) {
             value={data.text}
             onChange={(e) => updateData(widgetId, { text: e.target.value })}
             placeholder="Jot something down..."
-            className="h-full w-full resize-none bg-transparent font-body text-sm text-ink placeholder:text-ink-soft focus:outline-none overflow-hidden hover:overflow-auto"
+            className="h-full w-full resize-none bg-transparent font-body text-sm text-ink placeholder:text-ink-soft focus:outline-none overflow-hidden hover:overflow-auto scrollbar-gutter-stable scrollbar-thin scrollbar-thumb-pin-note scrollbar-track-transparent"
         />
     );
 }
