@@ -50,7 +50,7 @@ export default function App() {
     if (dataLoading) {
         return (
             <div className="flex h-screen w-screen items-center justify-center bg-board">
-                <span className="font-body text-sm text-paper/60">
+                <span className="font-body text-sm text-ink">
                     Loading your board...
                 </span>
             </div>
