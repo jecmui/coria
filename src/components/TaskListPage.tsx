@@ -84,73 +84,79 @@ export function TaskListPage({ onBack }: TaskListPageProps) {
                 </button>
             </div>
 
-            <ul className="flex-1 space-y-1.5 overflow-auto">
-                {tasks.map((task) => (
-                    <li
-                        key={task.id}
-                        className="flex items-start gap-3 rounded-md bg-paper px-3 py-2 text-sm"
-                    >
-                        <input
-                            type="checkbox"
-                            checked={task.done}
-                            onChange={() => toggleDone(task.id)}
-                            className="mt-1 h-3.5 w-3.5 shrink-0 accent-pin-todo"
-                        />
-                        {editingTaskId === task.id ? (
+            {tasks.length === 0 ? (
+                <div className="flex flex-1 items-start justify-center text-center text-ink-soft text-sm mt-5">
+                    Nothing's here yet. Add a task above!
+                </div>
+            ) : (
+                <ul className="flex-1 space-y-1.5 overflow-auto">
+                    {tasks.map((task) => (
+                        <li
+                            key={task.id}
+                            className="flex items-start gap-3 rounded-md bg-paper px-3 py-2 text-sm"
+                        >
                             <input
-                                ref={editingInputRef}
-                                value={editingDraft}
-                                onChange={(e) =>
-                                    setEditingDraft(e.target.value)
-                                }
-                                onKeyDown={(e) => {
-                                    if (e.key === "Enter") {
-                                        e.preventDefault();
-                                        handleSaveEdit(task.id);
-                                    } else if (e.key === "Escape") {
-                                        e.preventDefault();
-                                        setEditingTaskId(null);
-                                        setEditingDraft("");
-                                    }
-                                }}
-                                onBlur={() => {
-                                    handleSaveEdit(task.id);
-                                }}
-                                maxLength={CHARACTER_LIMIT}
-                                className="flex-1 rounded-md border border-paper-edge bg-paper px-2 py-1 text-sm text-ink focus:outline-none focus:ring-1 focus:ring-paper-edge"
+                                type="checkbox"
+                                checked={task.done}
+                                onChange={() => toggleDone(task.id)}
+                                className="mt-1 h-3.5 w-3.5 shrink-0 accent-pin-todo"
                             />
-                        ) : (
+                            {editingTaskId === task.id ? (
+                                <input
+                                    ref={editingInputRef}
+                                    value={editingDraft}
+                                    onChange={(e) =>
+                                        setEditingDraft(e.target.value)
+                                    }
+                                    onKeyDown={(e) => {
+                                        if (e.key === "Enter") {
+                                            e.preventDefault();
+                                            handleSaveEdit(task.id);
+                                        } else if (e.key === "Escape") {
+                                            e.preventDefault();
+                                            setEditingTaskId(null);
+                                            setEditingDraft("");
+                                        }
+                                    }}
+                                    onBlur={() => {
+                                        handleSaveEdit(task.id);
+                                    }}
+                                    maxLength={CHARACTER_LIMIT}
+                                    className="flex-1 rounded-md border border-paper-edge bg-paper px-2 py-1 text-sm text-ink focus:outline-none focus:ring-1 focus:ring-paper-edge"
+                                />
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                        handleStartEdit(task.id, task.title)
+                                    }
+                                    className={`min-w-0 flex-1 text-left wrap-break-word ${task.done ? "text-ink-soft line-through" : "text-ink"}`}
+                                >
+                                    {task.title}
+                                </button>
+                            )}
                             <button
-                                type="button"
-                                onClick={() =>
-                                    handleStartEdit(task.id, task.title)
-                                }
-                                className={`min-w-0 flex-1 text-left wrap-break-word ${task.done ? "text-ink-soft line-through" : "text-ink"}`}
+                                onClick={() => toggleFocusToday(task.id)}
+                                aria-label="Toggle focus for today"
+                                className={`text-lg leading-none ${
+                                    task.focusToday
+                                        ? "text-pin-todo"
+                                        : "text-paper-edge"
+                                }`}
                             >
-                                {task.title}
+                                ★
                             </button>
-                        )}
-                        <button
-                            onClick={() => toggleFocusToday(task.id)}
-                            aria-label="Toggle focus for today"
-                            className={`text-lg leading-none ${
-                                task.focusToday
-                                    ? "text-pin-todo"
-                                    : "text-paper-edge"
-                            }`}
-                        >
-                            ★
-                        </button>
-                        <button
-                            onClick={() => removeTask(task.id)}
-                            aria-label="Delete task"
-                            className="text-ink-soft hover:text-ink"
-                        >
-                            ×
-                        </button>
-                    </li>
-                ))}
-            </ul>
+                            <button
+                                onClick={() => removeTask(task.id)}
+                                aria-label="Delete task"
+                                className="text-ink-soft hover:text-ink"
+                            >
+                                ×
+                            </button>
+                        </li>
+                    ))}
+                </ul>
+            )}
         </div>
     );
 }
