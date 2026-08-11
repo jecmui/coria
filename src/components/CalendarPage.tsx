@@ -232,7 +232,7 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
 
                 <div className="min-h-0 flex-1 overflow-auto">
                     <div className="sticky top-0 z-20 grid min-w-225 grid-cols-[64px_repeat(7,minmax(0,1fr))] bg-paper">
-                        <div className="sticky left-0 top-0 z-20 border-b border-r border-paper-edge bg-paper" />
+                        <div className="sticky left-0 top-0 z-20 border-r border-paper-edge bg-paper" />
                         {days.map((day) => {
                             const today = sameCalendarDay(
                                 day,
