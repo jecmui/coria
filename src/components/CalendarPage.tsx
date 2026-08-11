@@ -248,15 +248,15 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                         {formatDayName(day, settings)}
                                     </p>
                                     <p className="font-display text-lg font-semibold">
-                                        {formatMonthDay(day, settings)}
+                                        {day.getDate()}
                                     </p>
                                 </div>
                             );
                         })}
                     </div>
 
-                    <div className="grid min-w-[900px] grid-cols-[64px_repeat(7,minmax(0,1fr))]">
-                        <div className="sticky left-0 top-0 z-20 h-[1344px] border-r border-paper-edge bg-paper/95">
+                    <div className="grid min-w-225 grid-cols-[64px_repeat(7,minmax(0,1fr))]">
+                        <div className="sticky left-0 top-0 z-20 h-336 border-r border-paper-edge bg-paper/95">
                             {Array.from({ length: 24 }, (_, hour) => (
                                 <div
                                     key={hour}
@@ -278,7 +278,7 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                             return (
                                 <div
                                     key={day.toISOString()}
-                                    className="relative h-[1344px] border-r border-paper-edge bg-paper/40"
+                                    className="relative h-336 border-r border-paper-edge bg-paper/40"
                                 >
                                     {Array.from({ length: 24 }, (_, hour) => (
                                         <div
@@ -326,7 +326,7 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                                     {event.title}
                                                 </p>
                                                 {showDetails && (
-                                                    <p className="mt-0.5 w-full whitespace-normal break-words text-[10px] leading-tight">
+                                                    <p className="mt-0.5 w-full whitespace-normal wrap-break-word text-[10px] leading-tight">
                                                         {formatTime(
                                                             new Date(
                                                                 event.startsAt,
