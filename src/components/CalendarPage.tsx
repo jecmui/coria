@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useCalendarStore } from "../store/calendarStore";
 import type { CalendarEvent } from "../types/calendar";
 import {
@@ -46,15 +46,6 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
     } = useCalendarStore();
     const [currentDate, setCurrentDate] = useState(new Date());
     const [draft, setDraft] = useState<EventDraft | null>(null);
-    const [dragStart, setDragStart] = useState<{
-        day: Date;
-        minutes: number;
-    } | null>(null);
-    const [dragEnd, setDragEnd] = useState<{
-        day: Date;
-        minutes: number;
-    } | null>(null);
-    const gridRef = useRef<HTMLDivElement>(null);
 
     const weekStart = useMemo(
         () => getWeekStart(currentDate, settings.weekStart),
@@ -70,17 +61,6 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
         const end = addDays(start, 7);
         void loadEvents(start.toISOString(), end.toISOString());
     }, [weekStart, loadEvents]);
-
-    function minutesFromPointer(clientY: number) {
-        const grid = gridRef.current;
-        if (!grid) return 0;
-        const rect = grid.getBoundingClientRect();
-        const minutes = ((clientY - rect.top) / HOUR_HEIGHT) * 60;
-        return Math.min(
-            23 * 60 + 59,
-            Math.max(0, Math.round(minutes / 15) * 15),
-        );
-    }
 
     function draftFromRange(
         day: Date,
@@ -114,47 +94,15 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
         );
     }
 
-    function handleGridMouseDown(day: Date, event: React.MouseEvent) {
-        if (event.button !== 0) return;
-        const minutes = minutesFromPointer(event.clientY);
-        setDragStart({ day, minutes });
-        setDragEnd({ day, minutes: minutes + 15 });
+    function handleAddEvent() {
+        const now = new Date();
+        const startMinutes = now.getHours() * 60 + now.getMinutes();
+        openNewEvent(
+            now,
+            startMinutes,
+            startMinutes + settings.defaultEventDuration,
+        );
     }
-
-    useEffect(() => {
-        if (!dragStart) return;
-        const activeDragStart = dragStart;
-        function handleMouseMove(event: MouseEvent) {
-            setDragEnd({
-                day: activeDragStart.day,
-                minutes: minutesFromPointer(event.clientY),
-            });
-        }
-        function handleMouseUp() {
-            if (!dragStart || !dragEnd) return;
-            const startMinutes = Math.min(
-                activeDragStart.minutes,
-                dragEnd.minutes,
-            );
-            const endMinutes = Math.max(
-                activeDragStart.minutes,
-                dragEnd.minutes,
-            );
-            openNewEvent(
-                activeDragStart.day,
-                startMinutes,
-                endMinutes > startMinutes ? endMinutes : undefined,
-            );
-            setDragStart(null);
-            setDragEnd(null);
-        }
-        window.addEventListener("mousemove", handleMouseMove);
-        window.addEventListener("mouseup", handleMouseUp);
-        return () => {
-            window.removeEventListener("mousemove", handleMouseMove);
-            window.removeEventListener("mouseup", handleMouseUp);
-        };
-    }, [dragStart, dragEnd]);
 
     function editEvent(event: CalendarEvent) {
         setDraft({
@@ -220,60 +168,71 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
     return (
         <div className="flex h-full w-full flex-col bg-board px-3 py-4 font-body text-ink sm:px-5 sm:py-5">
             <div className="mx-auto flex h-full w-full max-w-7xl flex-col overflow-hidden rounded-3xl border border-paper-edge bg-paper/95 shadow-[0_16px_48px_rgba(0,0,0,0.2)]">
-                <div className="flex flex-wrap items-center gap-2 border-b border-paper-edge px-4 py-3 sm:px-5">
+                <div className="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-2 border-b border-paper-edge bg-paper/95 px-4 py-3 sm:px-5">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={onBack}
+                            className="rounded-full px-3 py-1.5 text-sm font-medium text-ink-soft hover:cursor-pointer hover:bg-black/5"
+                        >
+                            ← Board
+                        </button>
+                        <div className="flex items-center gap-1">
+                            <button
+                                type="button"
+                                onClick={() =>
+                                    setCurrentDate((date) => addDays(date, -7))
+                                }
+                                className="rounded-full px-3 py-1.5 text-lg text-ink-soft hover:cursor-pointer hover:bg-black/5"
+                                aria-label="Previous week"
+                            >
+                                ‹
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setCurrentDate(new Date())}
+                                className="rounded-full border border-paper-edge px-3 py-1.5 text-xs font-semibold hover:cursor-pointer hover:bg-black/5"
+                            >
+                                Today
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() =>
+                                    setCurrentDate((date) => addDays(date, 7))
+                                }
+                                className="rounded-full px-3 py-1.5 text-lg text-ink-soft hover:cursor-pointer hover:bg-black/5"
+                                aria-label="Next week"
+                            >
+                                ›
+                            </button>
+                        </div>
+                        <h1 className="font-display text-lg font-semibold sm:text-xl">
+                            {formatMonthDay(days[0], settings)} –{" "}
+                            {formatMonthDay(days[6], settings)}
+                        </h1>
+                        {loading && (
+                            <span className="text-xs text-ink-soft">
+                                Loading…
+                            </span>
+                        )}
+                        {error && (
+                            <span className="text-xs text-pin-timer">
+                                Couldn't load events.
+                            </span>
+                        )}
+                    </div>
                     <button
                         type="button"
-                        onClick={onBack}
-                        className="rounded-full px-3 py-1.5 text-sm font-medium text-ink-soft hover:cursor-pointer hover:bg-black/5"
+                        onClick={() => void handleAddEvent()}
+                        className="rounded-full bg-pin-todo px-3 py-1.5 text-sm font-semibold text-ink shadow-sm hover:cursor-pointer hover:bg-pin-todo/90"
                     >
-                        ← Board
+                        Add Event
                     </button>
-                    <div className="flex items-center gap-1">
-                        <button
-                            type="button"
-                            onClick={() =>
-                                setCurrentDate((date) => addDays(date, -7))
-                            }
-                            className="rounded-full px-3 py-1.5 text-lg text-ink-soft hover:cursor-pointer hover:bg-black/5"
-                            aria-label="Previous week"
-                        >
-                            ‹
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setCurrentDate(new Date())}
-                            className="rounded-full border border-paper-edge px-3 py-1.5 text-xs font-semibold hover:cursor-pointer hover:bg-black/5"
-                        >
-                            Today
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() =>
-                                setCurrentDate((date) => addDays(date, 7))
-                            }
-                            className="rounded-full px-3 py-1.5 text-lg text-ink-soft hover:cursor-pointer hover:bg-black/5"
-                            aria-label="Next week"
-                        >
-                            ›
-                        </button>
-                    </div>
-                    <h1 className="font-display text-lg font-semibold sm:text-xl">
-                        {formatMonthDay(days[0], settings)} –{" "}
-                        {formatMonthDay(days[6], settings)}
-                    </h1>
-                    {loading && (
-                        <span className="text-xs text-ink-soft">Loading…</span>
-                    )}
-                    {error && (
-                        <span className="text-xs text-pin-timer">
-                            Couldn't load events.
-                        </span>
-                    )}
                 </div>
 
                 <div className="min-h-0 flex-1 overflow-auto">
-                    <div className="grid min-w-[900px] grid-cols-[64px_repeat(7,minmax(0,1fr))]">
-                        <div className="sticky top-0 z-20 border-b border-r border-paper-edge bg-paper" />
+                    <div className="sticky top-0 z-20 grid min-w-225 grid-cols-[64px_repeat(7,minmax(0,1fr))] bg-paper">
+                        <div className="sticky left-0 top-0 z-20 border-b border-r border-paper-edge bg-paper" />
                         {days.map((day) => {
                             const today = sameCalendarDay(
                                 day,
@@ -296,11 +255,8 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                         })}
                     </div>
 
-                    <div
-                        ref={gridRef}
-                        className="grid min-w-[900px] grid-cols-[64px_repeat(7,minmax(0,1fr))]"
-                    >
-                        <div className="relative h-[1344px] border-r border-paper-edge">
+                    <div className="grid min-w-[900px] grid-cols-[64px_repeat(7,minmax(0,1fr))]">
+                        <div className="sticky left-0 top-0 z-20 h-[1344px] border-r border-paper-edge bg-paper/95">
                             {Array.from({ length: 24 }, (_, hour) => (
                                 <div
                                     key={hour}
@@ -323,9 +279,6 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                 <div
                                     key={day.toISOString()}
                                     className="relative h-[1344px] border-r border-paper-edge bg-paper/40"
-                                    onMouseDown={(event) =>
-                                        handleGridMouseDown(day, event)
-                                    }
                                 >
                                     {Array.from({ length: 24 }, (_, hour) => (
                                         <div
@@ -353,6 +306,8 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                                 day,
                                                 settings.timeZone,
                                             );
+                                        const showDetails =
+                                            height >= HOUR_HEIGHT;
                                         return (
                                             <button
                                                 key={event.id}
@@ -364,23 +319,25 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                                     mouseEvent.stopPropagation();
                                                     editEvent(event);
                                                 }}
-                                                className="absolute left-1 right-1 overflow-hidden rounded-md border border-pin-todo/40 bg-pin-todo/70 px-2 py-1 text-left text-xs text-ink shadow-sm hover:cursor-pointer hover:bg-pin-todo/85"
+                                                className="absolute left-1 right-1 flex flex-col items-start justify-start overflow-hidden rounded-md border border-pin-todo/40 bg-pin-todo/70 px-2 py-1 text-left text-xs text-ink shadow-sm hover:cursor-pointer hover:bg-pin-todo/8"
                                                 style={{ top, height }}
                                             >
-                                                <p className="truncate font-semibold">
+                                                <p className="w-full truncate font-semibold">
                                                     {event.title}
                                                 </p>
-                                                <p className="truncate text-[10px]">
-                                                    {formatTime(
-                                                        new Date(
-                                                            event.startsAt,
-                                                        ),
-                                                        settings,
-                                                    )}
-                                                    {event.location
-                                                        ? ` · ${event.location}`
-                                                        : ""}
-                                                </p>
+                                                {showDetails && (
+                                                    <p className="mt-0.5 w-full whitespace-normal break-words text-[10px] leading-tight">
+                                                        {formatTime(
+                                                            new Date(
+                                                                event.startsAt,
+                                                            ),
+                                                            settings,
+                                                        )}
+                                                        {event.location
+                                                            ? ` · ${event.location}`
+                                                            : ""}
+                                                    </p>
+                                                )}
                                             </button>
                                         );
                                     })}
