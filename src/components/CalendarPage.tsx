@@ -8,7 +8,6 @@ import {
     eventTopAndHeight,
     formatDayName,
     formatHour,
-    formatMonthDay,
     formatTime,
     getWeekStart,
     inputValuesToUtcIso,
@@ -207,8 +206,32 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                             </button>
                         </div>
                         <h1 className="font-display text-lg font-semibold sm:text-xl">
-                            {formatMonthDay(days[0], settings)} –{" "}
-                            {formatMonthDay(days[6], settings)}
+                            {(() => {
+                                const startMonth = days[0].getMonth();
+                                const endMonth = days[6].getMonth();
+                                const startYear = days[0].getFullYear();
+                                const endYear = days[6].getFullYear();
+                                const monthFormatter = new Intl.DateTimeFormat(
+                                    "en-US",
+                                    {
+                                        timeZone: settings.timeZone,
+                                        month: "short",
+                                    },
+                                );
+
+                                if (
+                                    startMonth !== endMonth ||
+                                    startYear !== endYear
+                                ) {
+                                    return `${monthFormatter.format(days[0])} - ${monthFormatter.format(days[6])} ${endYear}`;
+                                }
+
+                                return new Intl.DateTimeFormat("en-US", {
+                                    timeZone: settings.timeZone,
+                                    month: "long",
+                                    year: "numeric",
+                                }).format(currentDate);
+                            })()}
                         </h1>
                         {loading && (
                             <span className="text-xs text-ink-soft">
