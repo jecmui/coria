@@ -141,13 +141,13 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
                             {focusTasks.map((task) => (
                                 <li
                                     key={task.id}
-                                    className="flex items-center gap-2"
+                                    className="flex items-start gap-2"
                                 >
                                     <input
                                         type="checkbox"
                                         checked={task.done}
                                         onChange={() => toggleDone(task.id)}
-                                        className="mt-0.5 h-3.5 w-3.5 accent-pin-todo"
+                                        className="mt-1 h-3.5 w-3.5 shrink-0 accent-pin-todo"
                                     />
                                     {editingTaskId === task.id ? (
                                         <input

@@ -192,7 +192,7 @@ export default function App() {
                                                 setSettingsSection(key),
                                             )
                                         }
-                                        className={`flex w-full items-center rounded-xl px-3 py-2 text-left font-body text-sm transition ${
+                                        className={`flex w-full items-center rounded-xl px-3 py-2 text-left font-body text-sm transition hover:cursor-pointer ${
                                             settingsSection === key
                                                 ? "bg-board/30 text-ink"
                                                 : "text-ink-soft hover:bg-black/5 hover:text-ink"
