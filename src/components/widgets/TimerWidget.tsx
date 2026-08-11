@@ -75,7 +75,7 @@ export function TimerWidget({ data }: TimerWidgetProps) {
     const seconds = (secondsLeft % 60).toString().padStart(2, "0");
 
     return (
-        <div className="flex h-full flex-col items-center justify-center gap-3 overflow-hidden hover:overflow-auto">
+        <div className="flex h-full flex-col items-center justify-center gap-3 overflow-hidden">
             <span className="font-body text-xs font-medium uppercase tracking-wide text-ink-soft">
                 {PHASE_LABEL[phase]}
             </span>
