@@ -17,6 +17,14 @@ const WIDGET_TITLES: Record<string, string> = {
     calendar: "Calendar",
 };
 
+const WIDGET_MIN_HEIGHTS: Record<string, number> = {
+    todo: 160,
+    note: 160,
+    timer: 200,
+    image: 160,
+    calendar: 160,
+};
+
 interface BoardProps {
     onOpenFullList: () => void;
     onOpenCalendar: () => void;
@@ -105,7 +113,7 @@ export function Board({ onOpenFullList, onOpenCalendar }: BoardProps) {
                     }}
                     position={{ x: widget.layout.x, y: widget.layout.y }}
                     minWidth={200}
-                    minHeight={160}
+                    minHeight={WIDGET_MIN_HEIGHTS[widget.type]}
                     dragHandleClassName="widget-drag-handle"
                     style={{ zIndex: widget.zIndex }}
                     onDragStart={() => bringToFront(widget.id)}
