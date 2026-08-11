@@ -9,8 +9,10 @@ import { supabase } from "../lib/supabase";
 import { useAuth } from "../auth/AuthContext";
 import { useBoardStore } from "../store/boardStore";
 import type { PomodoroSettings } from "../types";
+import { DEFAULT_CALENDAR_SETTINGS, useCalendarStore } from "../store/calendarStore";
+import type { CalendarSettings } from "../types/calendar";
 
-export type SettingsSection = "account" | "preferences" | "pomodoro";
+export type SettingsSection = "account" | "preferences" | "pomodoro" | "calendar";
 type AccountView = "details" | "change-password" | "forgot-password";
 
 export interface SettingsPageHandle {
@@ -28,6 +30,7 @@ const SECTIONS: { key: SettingsSection; label: string }[] = [
     { key: "account", label: "Account" },
     { key: "preferences", label: "Appearance" },
     { key: "pomodoro", label: "Pomodoro" },
+    { key: "calendar", label: "Calendar" },
 ];
 
 const FIRST_NAME_LIMIT = 35;
@@ -124,6 +127,10 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
         const setStorePomodoroSettings = useBoardStore(
             (s) => s.setPomodoroSettings,
         );
+        const storeCalendarSettings = useCalendarStore((s) => s.settings);
+        const calendarLoading = useCalendarStore((s) => s.settingsLoading);
+        const calendarLoadError = useCalendarStore((s) => s.settingsError);
+        const saveStoreCalendarSettings = useCalendarStore((s) => s.saveSettings);
 
         // ----- Account section state -----
         const initialFirstName =
@@ -158,6 +165,18 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
         );
         const [pomodoroSaving, setPomodoroSaving] = useState(false);
 
+        // ----- Calendar section state -----
+        const [calendarForm, setCalendarForm] = useState<CalendarSettings>(
+            storeCalendarSettings,
+        );
+        const [savedCalendarForm, setSavedCalendarForm] = useState<CalendarSettings>(
+            storeCalendarSettings,
+        );
+        const [calendarSynced, setCalendarSynced] = useState(false);
+        const [calendarError, setCalendarError] = useState<string | null>(null);
+        const [calendarSuccess, setCalendarSuccess] = useState<string | null>(null);
+        const [calendarSaving, setCalendarSaving] = useState(false);
+
         // Sync the editable Pomodoro form from the store once its initial load
         // (kicked off at login) resolves, without clobbering in-progress edits.
         useEffect(() => {
@@ -168,6 +187,14 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
             setPomodoroSynced(true);
             // eslint-disable-next-line react-hooks/exhaustive-deps
         }, [pomodoroLoading, pomodoroSynced]);
+
+        useEffect(() => {
+            if (calendarLoading || calendarSynced) return;
+            const form = storeCalendarSettings ?? DEFAULT_CALENDAR_SETTINGS;
+            setCalendarForm(form);
+            setSavedCalendarForm(form);
+            setCalendarSynced(true);
+        }, [calendarLoading, calendarSynced, storeCalendarSettings]);
 
         function updatePomodoroField<K extends keyof PomodoroFormState>(
             key: K,
@@ -185,8 +212,10 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
 
         const isPomodoroDirty =
             JSON.stringify(pomodoroForm) !== JSON.stringify(savedPomodoroForm);
+        const isCalendarDirty =
+            JSON.stringify(calendarForm) !== JSON.stringify(savedCalendarForm);
 
-        const isDirty = isAccountDirty || isPomodoroDirty;
+        const isDirty = isAccountDirty || isPomodoroDirty || isCalendarDirty;
 
         // ----- Leave-without-saving confirmation -----
         const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
@@ -206,6 +235,11 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
         function resetPomodoroFields() {
             setPomodoroForm(savedPomodoroForm);
             setPomodoroError(null);
+        }
+
+        function resetCalendarFields() {
+            setCalendarForm(savedCalendarForm);
+            setCalendarError(null);
         }
 
         function requestNavigation(action: () => void) {
@@ -231,6 +265,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
         function confirmDiscard() {
             resetAccountFields();
             resetPomodoroFields();
+            resetCalendarFields();
             setShowLeaveConfirm(false);
             const action = pendingActionRef.current;
             pendingActionRef.current = null;
@@ -408,9 +443,30 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
             setPomodoroSaving(false);
         }
 
+        async function handleSaveCalendar() {
+            if (!user) {
+                setCalendarError("You must be signed in to update settings.");
+                return;
+            }
+            setCalendarError(null);
+            setCalendarSuccess(null);
+            setCalendarSaving(true);
+            const saved = await saveStoreCalendarSettings(calendarForm);
+            if (!saved) {
+                setCalendarError("Couldn't save Calendar settings.");
+                setCalendarSaving(false);
+                return;
+            }
+            setSavedCalendarForm(calendarForm);
+            setCalendarSuccess("Calendar settings saved.");
+            window.setTimeout(() => setCalendarSuccess(null), 4000);
+            setCalendarSaving(false);
+        }
+
         function handleSaveChanges() {
             if (activeSection === "account") void handleSaveAccount();
             else if (activeSection === "pomodoro") void handleSavePomodoro();
+            else if (activeSection === "calendar") void handleSaveCalendar();
         }
 
         const saveDisabled =
@@ -418,11 +474,14 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
             (activeSection === "account" &&
                 (!isAccountDirty || accountSaving)) ||
             (activeSection === "pomodoro" &&
-                (!isPomodoroDirty || pomodoroSaving));
+                (!isPomodoroDirty || pomodoroSaving)) ||
+            (activeSection === "calendar" &&
+                (!isCalendarDirty || calendarSaving));
 
         const saving =
             (activeSection === "account" && accountSaving) ||
-            (activeSection === "pomodoro" && pomodoroSaving);
+            (activeSection === "pomodoro" && pomodoroSaving) ||
+            (activeSection === "calendar" && calendarSaving);
 
         return (
             <div className="flex h-full w-full flex-col bg-board px-4 py-6 sm:px-6 lg:px-8">
@@ -759,6 +818,74 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                                     <p className="font-body text-base text-ink-soft">
                                         Coming soon.
                                     </p>
+                                </div>
+                            )}
+
+                            {activeSection === "calendar" && (
+                                <div className="space-y-5">
+                                    <div>
+                                        <h2 className="font-body text-lg font-semibold text-ink">
+                                            Calendar
+                                        </h2>
+                                        <p className="mt-1 font-body text-sm text-ink-soft">
+                                            Choose how your calendar displays dates and times.
+                                        </p>
+                                    </div>
+
+                                    {calendarLoadError && (
+                                        <p className="text-xs text-pin-timer">
+                                            Couldn't load your saved Calendar settings, showing defaults instead.
+                                        </p>
+                                    )}
+
+                                    <div className="grid gap-4 md:grid-cols-2">
+                                        <label className="block space-y-2">
+                                            <span className="font-body text-sm font-medium text-ink">Preferred week start</span>
+                                            <select value={calendarForm.weekStart} onChange={(event) => setCalendarForm({ ...calendarForm, weekStart: Number(event.target.value) })} className={inputClass}>
+                                                <option value={0}>Sunday</option>
+                                                <option value={1}>Monday</option>
+                                                <option value={2}>Tuesday</option>
+                                                <option value={3}>Wednesday</option>
+                                                <option value={4}>Thursday</option>
+                                                <option value={5}>Friday</option>
+                                                <option value={6}>Saturday</option>
+                                            </select>
+                                        </label>
+
+                                        <label className="block space-y-2">
+                                            <span className="font-body text-sm font-medium text-ink">Date format</span>
+                                            <select value={calendarForm.dateFormat} onChange={(event) => setCalendarForm({ ...calendarForm, dateFormat: event.target.value as CalendarSettings["dateFormat"] })} className={inputClass}>
+                                                <option value="MM/DD/YYYY">MM/DD/YYYY</option>
+                                                <option value="DD/MM/YYYY">DD/MM/YYYY</option>
+                                                <option value="YYYY-MM-DD">YYYY-MM-DD</option>
+                                            </select>
+                                        </label>
+
+                                        <label className="block space-y-2">
+                                            <span className="font-body text-sm font-medium text-ink">Time format</span>
+                                            <select value={calendarForm.timeFormat} onChange={(event) => setCalendarForm({ ...calendarForm, timeFormat: event.target.value as CalendarSettings["timeFormat"] })} className={inputClass}>
+                                                <option value="12h">12-hour (AM/PM)</option>
+                                                <option value="24h">24-hour</option>
+                                            </select>
+                                        </label>
+
+                                        <label className="block space-y-2">
+                                            <span className="font-body text-sm font-medium text-ink">Time zone</span>
+                                            <select value={calendarForm.timeZone} onChange={(event) => setCalendarForm({ ...calendarForm, timeZone: event.target.value })} className={inputClass}>
+                                                {(typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : [calendarForm.timeZone]).map((zone) => (
+                                                    <option key={zone} value={zone}>{zone.replaceAll("_", " ")}</option>
+                                                ))}
+                                            </select>
+                                        </label>
+
+                                        <label className="block space-y-2 md:col-span-2">
+                                            <span className="font-body text-sm font-medium text-ink">Default event duration (minutes)</span>
+                                            <input type="number" min="15" step="15" value={calendarForm.defaultEventDuration} onChange={(event) => setCalendarForm({ ...calendarForm, defaultEventDuration: Math.max(15, Number(event.target.value)) })} className={inputClass} />
+                                        </label>
+                                    </div>
+
+                                    {calendarError && <p className="text-xs text-pin-timer">{calendarError}</p>}
+                                    {calendarSuccess && <p className="text-xs text-pin-todo">{calendarSuccess}</p>}
                                 </div>
                             )}
 

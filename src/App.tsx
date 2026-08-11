@@ -11,8 +11,10 @@ import { useAuth } from "./auth/AuthContext";
 import { AuthScreen } from "./auth/AuthScreen";
 import { useTaskStore } from "./store/taskStore";
 import { useBoardStore } from "./store/boardStore";
+import { useCalendarStore } from "./store/calendarStore";
+import { CalendarPage } from "./components/CalendarPage";
 
-type View = "board" | "tasks" | "settings";
+type View = "board" | "tasks" | "calendar" | "settings";
 
 export default function App() {
     const { user, loading, signOut } = useAuth();
@@ -29,6 +31,8 @@ export default function App() {
     const loadWidgets = useBoardStore((s) => s.loadWidgets);
     const loadPomodoroSettings = useBoardStore((s) => s.loadPomodoroSettings);
     const clearWidgets = useBoardStore((s) => s.clear);
+    const loadCalendar = useCalendarStore((s) => s.load);
+    const clearCalendar = useCalendarStore((s) => s.clear);
     const tasksLoading = useTaskStore((s) => s.loading);
     const widgetsLoading = useBoardStore((s) => s.loading);
     const dataLoading = tasksLoading || widgetsLoading;
@@ -38,9 +42,11 @@ export default function App() {
             loadTasks(user.id);
             loadWidgets(user.id);
             loadPomodoroSettings(user.id);
+            loadCalendar(user.id);
         } else {
             clearTasks();
             clearWidgets();
+            clearCalendar();
         }
         // Re-run whenever the logged-in user changes (login, logout, or switching accounts)
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -161,6 +167,19 @@ export default function App() {
                         <button
                             type="button"
                             onClick={() =>
+                                guardedNavigate(() => setView("calendar"))
+                            }
+                            className={`rounded-xl px-3 py-2 text-left font-body text-sm font-medium hover:cursor-pointer transition ${
+                                view === "calendar"
+                                    ? "bg-board/30 text-ink"
+                                    : "text-ink-soft hover:bg-black/5 hover:text-ink"
+                            }`}
+                        >
+                            Calendar
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() =>
                                 guardedNavigate(() => {
                                     setView("settings");
                                     setSettingsSection("account");
@@ -182,6 +201,7 @@ export default function App() {
                                         ["account", "Account"],
                                         ["preferences", "Appearance"],
                                         ["pomodoro", "Pomodoro"],
+                                        ["calendar", "Calendar"],
                                     ] as const
                                 ).map(([key, label]) => (
                                     <button
@@ -223,6 +243,10 @@ export default function App() {
                 <div className="h-full w-full">
                     <TaskListPage onBack={() => setView("board")} />
                 </div>
+            ) : view === "calendar" ? (
+                <div className="h-full w-full">
+                    <CalendarPage onBack={() => setView("board")} />
+                </div>
             ) : view === "settings" ? (
                 <SettingsPage
                     ref={settingsPageRef}
@@ -231,7 +255,10 @@ export default function App() {
                 />
             ) : (
                 <div className="relative z-0 h-full w-full">
-                    <Board onOpenFullList={() => setView("tasks")} />
+                    <Board
+                        onOpenFullList={() => setView("tasks")}
+                        onOpenCalendar={() => setView("calendar")}
+                    />
                 </div>
             )}
 
@@ -239,3 +266,4 @@ export default function App() {
         </div>
     );
 }
+

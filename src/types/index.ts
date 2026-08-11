@@ -1,4 +1,4 @@
-export type WidgetType = "todo" | "note" | "timer";
+export type WidgetType = "todo" | "note" | "timer" | "image" | "calendar";
 
 export interface WidgetLayout {
   x: number;
@@ -13,11 +13,20 @@ export interface BoardWidget {
   layout: WidgetLayout;
   zIndex: number;
   /** Widget-specific payload, shape depends on `type` */
-  data: NoteData | TodoWidgetData | TimerData;
+  data: NoteData | TodoWidgetData | TimerData | ImageData | CalendarWidgetData;
 }
 
 export interface NoteData {
   text: string;
+}
+
+export interface CalendarWidgetData {
+  view: "agenda";
+}
+
+export interface ImageData {
+  src: string;
+  fileName: string;
 }
 
 export interface TodoWidgetData {

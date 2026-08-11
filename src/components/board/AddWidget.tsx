@@ -3,7 +3,7 @@ import { useBoardStore } from "../../store/boardStore";
 import type { WidgetType } from "../../types";
 
 type AddOption = {
-    type: WidgetType | "image";
+    type: WidgetType;
     label: string;
     color: string;
     disabled?: boolean;
@@ -16,8 +16,12 @@ const OPTIONS: AddOption[] = [
     {
         type: "image",
         label: "Image",
-        color: "var(--color-pin-timer)",
-        disabled: true,
+        color: "var(--color-pin-note)",
+    },
+    {
+        type: "calendar",
+        label: "Calendar",
+        color: "var(--color-pin-todo)",
     },
 ];
 
@@ -48,7 +52,7 @@ export function AddWidget() {
     }, [open]);
 
     const handleSelect = (option: AddOption) => {
-        if (option.disabled || option.type === "image") {
+        if (option.disabled) {
             setOpen(false);
             return;
         }

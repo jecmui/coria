@@ -4,19 +4,24 @@ import { WidgetShell } from "./WidgetShell";
 import { TodoWidget } from "../widgets/TodoWidget";
 import { NoteWidget } from "../widgets/NoteWidget";
 import { TimerWidget } from "../widgets/TimerWidget";
-import type { NoteData, TimerData } from "../../types";
+import type { ImageData, NoteData, TimerData } from "../../types";
+import { ImageWidget } from "../widgets/ImageWidget";
+import { CalendarWidget } from "../widgets/CalendarWidget";
 
 const WIDGET_TITLES: Record<string, string> = {
   todo: "Today",
   note: "Note",
   timer: "Pomodoro",
+  image: "Image",
+  calendar: "Calendar",
 };
 
 interface BoardProps {
   onOpenFullList: () => void;
+  onOpenCalendar: () => void;
 }
 
-export function Board({ onOpenFullList }: BoardProps) {
+export function Board({ onOpenFullList, onOpenCalendar }: BoardProps) {
   const widgets = useBoardStore((s) => s.widgets);
   const updateLayout = useBoardStore((s) => s.updateLayout);
   const removeWidget = useBoardStore((s) => s.removeWidget);
@@ -55,6 +60,10 @@ export function Board({ onOpenFullList }: BoardProps) {
               <NoteWidget widgetId={widget.id} data={widget.data as NoteData} />
             )}
             {widget.type === "timer" && <TimerWidget data={widget.data as TimerData} />}
+            {widget.type === "image" && (
+              <ImageWidget widgetId={widget.id} data={widget.data as ImageData} />
+            )}
+            {widget.type === "calendar" && <CalendarWidget onOpenCalendar={onOpenCalendar} />}
           </WidgetShell>
         </Rnd>
       ))}

@@ -29,6 +29,8 @@ const DEFAULT_LAYOUTS: Record<WidgetType, WidgetLayout> = {
   todo: { x: 40, y: 40, width: 300, height: 360 },
   note: { x: 380, y: 40, width: 260, height: 220 },
   timer: { x: 40, y: 420, width: 260, height: 220 },
+  image: { x: 40, y: 420, width: 260, height: 220 },
+  calendar: { x: 40, y: 420, width: 420, height: 280 },
 };
 
 function defaultDataFor(type: WidgetType, pomodoroSettings: PomodoroSettings): BoardWidget["data"] {
@@ -39,6 +41,10 @@ function defaultDataFor(type: WidgetType, pomodoroSettings: PomodoroSettings): B
       return { text: "" };
     case "timer":
       return { mode: "pomodoro", ...pomodoroSettings };
+    case "image":
+      return { src: "", fileName: "" };
+    case "calendar":
+      return { view: "agenda" };
   }
 }
 

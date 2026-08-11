@@ -70,3 +70,65 @@ alter table profiles
   add column long_break_interval integer not null default 4,
   add column auto_start_breaks boolean not null default false,
   add column auto_start_focus boolean not null default false;
+
+  -- Calendar preferences: display settings are kept on the user's profile so they
+-- can be reused by the board widget, full calendar page, and future integrations.
+alter table profiles
+  add column calendar_week_start smallint not null default 0,
+  add column calendar_date_format text not null default 'MM/DD/YYYY',
+  add column calendar_time_format text not null default '12h',
+  add column calendar_time_zone text,
+  add column calendar_default_event_duration integer not null default 60;
+
+-- Local calendar events. Timestamps are stored as timestamptz so future Google
+-- Calendar synchronization can safely convert between time zones.
+create table calendar_events (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  title text not null,
+  description text not null default '',
+  location text not null default '',
+  starts_at timestamptz not null,
+  ends_at timestamptz not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint calendar_events_valid_time check (ends_at > starts_at)
+);
+
+create index calendar_events_user_starts_at_idx
+  on calendar_events (user_id, starts_at);
+
+alter table calendar_events enable row level security;
+
+create policy "Users manage own calendar events"
+on calendar_events for all
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+-- Connection metadata for future external calendar providers. OAuth access and
+-- refresh tokens should be kept in a trusted backend, not in a client-readable
+-- table. This table records which external calendar is connected and its sync state.
+create table calendar_connections (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  provider text not null,
+  provider_account_id text,
+  external_calendar_id text,
+  sync_enabled boolean not null default true,
+  last_synced_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, provider)
+);
+
+alter table calendar_connections enable row level security;
+
+create policy "Users view own calendar connections"
+on calendar_connections for select
+using (auth.uid() = user_id);
+
+create policy "Users manage own calendar connections"
+on calendar_connections for all
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+

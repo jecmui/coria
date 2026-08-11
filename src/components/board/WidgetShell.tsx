@@ -5,6 +5,8 @@ const PIN_COLOR: Record<WidgetType, string> = {
     todo: "var(--color-pin-todo)",
     note: "var(--color-pin-note)",
     timer: "var(--color-pin-timer)",
+    image: "var(--color-pin-note)",
+    calendar: "var(--color-pin-todo)",
 };
 
 interface WidgetShellProps {
