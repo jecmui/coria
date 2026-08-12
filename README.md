@@ -31,13 +31,3 @@ npm run dev
 Adding a new widget type: add it to `WidgetType` in `types/index.ts`, give it a
 default layout/data in `boardStore.ts`, build the component in `components/widgets/`,
 and register it in `Board.tsx` + `WidgetTray.tsx`.
-
-## Scope
-
-**In MVP:** freeform board (drag/resize/persist), today's-focus to-do widget +
-full list page, note widget, pomodoro widget.
-
-**Deliberately deferred:** Todoist/calendar integration (real OAuth work, its own
-project), 20-20-20 timer (redundant with pomodoro for demo purposes), cosmetic
-stickers (low technical signal), backend persistence (currently localStorage;
-Spring Boot + Postgres is the natural next step).
