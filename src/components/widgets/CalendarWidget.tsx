@@ -74,7 +74,7 @@ export function CalendarWidget({ onOpenCalendar }: CalendarWidgetProps) {
                         key={day.toISOString()}
                         className="min-w-0 flex-1 border-r border-paper-edge last:border-r-0"
                     >
-                        <div className="border-b border-paper-edge px-2 py-2 text-center">
+                        <div className="border-b border-paper-edge px-2 pb-2 text-center">
                             <p className="text-[10px] font-semibold uppercase text-ink-soft">
                                 {formatDayName(day, settings)}
                             </p>

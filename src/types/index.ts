@@ -1,57 +1,67 @@
 export type WidgetType = "todo" | "note" | "timer" | "image" | "calendar";
 
 export interface WidgetLayout {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
 }
 
 export interface BoardWidget {
-  id: string;
-  type: WidgetType;
-  layout: WidgetLayout;
-  zIndex: number;
-  /** Widget-specific payload, shape depends on `type` */
-  data: NoteData | TodoWidgetData | TimerData | ImageData | CalendarWidgetData;
+    id: string;
+    type: WidgetType;
+    layout: WidgetLayout;
+    zIndex: number;
+    /** Position in the mobile stacked view, reorderable by drag. Independent of `layout`,
+     *  which only applies to the free-form desktop canvas. */
+    mobileOrder: number;
+    /** Widget-specific payload, shape depends on `type` */
+    data:
+        | NoteData
+        | TodoWidgetData
+        | TimerData
+        | ImageData
+        | CalendarWidgetData;
 }
 
 export interface NoteData {
-  text: string;
+    text: string;
 }
 
 export interface CalendarWidgetData {
-  view: "agenda";
+    view: "agenda";
 }
 
 export interface ImageData {
-  src: string;
-  fileName: string;
+    src: string;
+    fileName: string;
 }
 
 export interface TodoWidgetData {
-  // The todo widget just mirrors the global task list;
-  // this is reserved for future per-widget display prefs (e.g. max items shown)
-  maxItemsShown: number;
+    // The todo widget just mirrors the global task list;
+    // this is reserved for future per-widget display prefs (e.g. max items shown)
+    maxItemsShown: number;
 }
 
 export interface PomodoroSettings {
-  focusSeconds: number;
-  shortBreakSeconds: number;
-  longBreakSeconds: number;
-  longBreakInterval: number;
-  autoStartBreaks: boolean;
-  autoStartFocus: boolean;
+    focusSeconds: number;
+    shortBreakSeconds: number;
+    longBreakSeconds: number;
+    longBreakInterval: number;
+    autoStartBreaks: boolean;
+    autoStartFocus: boolean;
 }
 
 export interface TimerData extends PomodoroSettings {
-  mode: "pomodoro";
+    mode: "pomodoro";
 }
 
 export interface Task {
-  id: string;
-  title: string;
-  done: boolean;
-  focusToday: boolean;
-  createdAt: number;
+    id: string;
+    title: string;
+    done: boolean;
+    focusToday: boolean;
+    createdAt: number;
+    /** Drag-reorder position among today's focus tasks, as shown in the Today widget. */
+    sortOrder: number;
 }

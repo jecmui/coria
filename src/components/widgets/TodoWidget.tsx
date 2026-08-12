@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+import type { RefObject } from "react";
 import { useTaskStore } from "../../store/taskStore";
+import { useDragReorder } from "../../lib/useDragReorder";
 
 interface TodoWidgetProps {
     onOpenFullList: () => void;
@@ -9,7 +11,16 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
     const tasks = useTaskStore((s) => s.tasks);
     const addTask = useTaskStore((s) => s.addTask);
     const toggleDone = useTaskStore((s) => s.toggleDone);
-    const focusTasks = tasks.filter((t) => t.focusToday);
+    const reorderFocusTasks = useTaskStore((s) => s.reorderFocusTasks);
+    const focusTasks = [...tasks]
+        .filter((t) => t.focusToday)
+        .sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt - b.createdAt);
+    const {
+        containerRef,
+        displayItems: orderedFocusTasks,
+        draggingId,
+        dragHandleProps,
+    } = useDragReorder(focusTasks, reorderFocusTasks);
     const updateTask = useTaskStore((s) => s.updateTask);
     const [draft, setDraft] = useState("");
     const [isAdding, setIsAdding] = useState(false);
@@ -137,11 +148,25 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
                             All done for today!
                         </p>
                     ) : (
-                        <ul className="space-y-1.5">
-                            {focusTasks.map((task) => (
+                        <ul
+                            ref={
+                                containerRef as RefObject<HTMLUListElement | null>
+                            }
+                            className="space-y-1.5"
+                            style={{
+                                userSelect: draggingId ? "none" : undefined,
+                            }}
+                        >
+                            {orderedFocusTasks.map((task) => (
                                 <li
                                     key={task.id}
-                                    className="flex items-start gap-2"
+                                    data-drag-id={task.id}
+                                    {...dragHandleProps(task.id)}
+                                    className={`group flex items-start gap-2 touch-none ${
+                                        draggingId === task.id
+                                            ? "opacity-60"
+                                            : ""
+                                    }`}
                                 >
                                     <input
                                         type="checkbox"
@@ -190,6 +215,19 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
                                             {task.title}
                                         </button>
                                     )}
+                                    <span
+                                        className="mt-1 shrink-0 text-ink-soft/50 opacity-0 transition-opacity group-hover:opacity-100"
+                                        aria-hidden="true"
+                                    >
+                                        <img
+                                            src="/grip-vertical-solid-full.svg"
+                                            width={18}
+                                            height={18}
+                                            alt=""
+                                            className="cursor-move"
+                                            draggable="false"
+                                        />
+                                    </span>
                                 </li>
                             ))}
                         </ul>

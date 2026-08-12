@@ -53,7 +53,7 @@ export function TaskListPage({ onBack }: TaskListPageProps) {
                 ← Back to board
             </button>
             <h1 className="mb-1 font-display text-2xl font-semibold text-ink">
-                Full task list
+                Tasks
             </h1>
             <p className="mb-6 text-sm text-ink">
                 Everything lives here. Star what you want to focus on today —

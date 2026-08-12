@@ -132,3 +132,11 @@ on calendar_connections for all
 using (auth.uid() = user_id)
 with check (auth.uid() = user_id);
 
+-- Drag-reorder position among today's focus tasks, edited from the Today widget.
+alter table tasks
+  add column sort_order integer not null default 0;
+
+-- Drag-reorder position in the mobile stacked board view. Kept separate from
+-- `layout`, which only positions widgets on the free-form desktop canvas.
+alter table board_widgets
+  add column mobile_order integer not null default 0;

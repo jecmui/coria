@@ -74,7 +74,7 @@ export function AddWidget() {
                             type="button"
                             onClick={() => handleSelect(option)}
                             disabled={option.disabled}
-                            className="flex min-w-[140px] items-center justify-between gap-2 rounded-xl px-3 py-2 text-left font-body text-xs font-medium text-ink transition disabled:cursor-not-allowed disabled:opacity-60 hover:bg-black/5 hover:cursor-pointer"
+                            className="flex min-w-35 items-center justify-between gap-2 rounded-xl px-3 py-2 text-left font-body text-xs font-medium text-ink transition disabled:cursor-not-allowed disabled:opacity-60 hover:bg-black/5 hover:cursor-pointer"
                         >
                             <span className="flex items-center gap-2">
                                 <span
