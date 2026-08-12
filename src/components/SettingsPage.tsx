@@ -5,14 +5,35 @@ import {
     useRef,
     useState,
 } from "react";
+import type { ReactNode } from "react";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../auth/AuthContext";
 import { useBoardStore } from "../store/boardStore";
-import type { PomodoroSettings } from "../types";
-import { DEFAULT_CALENDAR_SETTINGS, useCalendarStore } from "../store/calendarStore";
+import type {
+    AppearanceColors,
+    AppearanceSettings,
+    PomodoroSettings,
+    ThemeMode,
+} from "../types";
+import {
+    DEFAULT_CALENDAR_SETTINGS,
+    useCalendarStore,
+} from "../store/calendarStore";
 import type { CalendarSettings } from "../types/calendar";
+import { useAppearanceStore } from "../store/appearanceStore";
+import {
+    colorsEqual,
+    DARK_COLORS,
+    DEFAULT_APPEARANCE,
+    LIGHT_COLORS,
+    usePrefersDark,
+} from "../lib/appearance";
 
-export type SettingsSection = "account" | "preferences" | "pomodoro" | "calendar";
+export type SettingsSection =
+    | "account"
+    | "preferences"
+    | "pomodoro"
+    | "calendar";
 type AccountView = "details" | "change-password" | "forgot-password";
 
 export interface SettingsPageHandle {
@@ -118,6 +139,129 @@ function ToggleSwitch({
     );
 }
 
+function ColorField({
+    label,
+    value,
+    onChange,
+}: {
+    label: string;
+    value: string;
+    onChange: (value: string) => void;
+}) {
+    return (
+        <label className="flex items-center justify-between gap-3 rounded-xl bg-paper/70 px-3 py-2">
+            <span className="font-body text-sm text-ink">{label}</span>
+            <span className="flex items-center gap-2">
+                <span className="font-mono text-xs uppercase text-ink-soft">
+                    {value}
+                </span>
+                <input
+                    type="color"
+                    value={value}
+                    onChange={(event) => onChange(event.target.value)}
+                    aria-label={label}
+                    className="h-8 w-8 cursor-pointer rounded-md border border-paper-edge bg-transparent p-0.5"
+                />
+            </span>
+        </label>
+    );
+}
+
+function ColorCategoryCard({
+    title,
+    description,
+    resetDisabled,
+    onReset,
+    children,
+}: {
+    title: string;
+    description: string;
+    resetDisabled: boolean;
+    onReset: () => void;
+    children: ReactNode;
+}) {
+    return (
+        <div className="space-y-3 rounded-2xl border border-paper-edge bg-board/40 p-4">
+            <div className="flex items-start justify-between gap-3">
+                <div>
+                    <h3 className="font-body text-sm font-semibold text-ink">
+                        {title}
+                    </h3>
+                    <p className="mt-0.5 font-body text-xs text-ink-soft">
+                        {description}
+                    </p>
+                </div>
+                <button
+                    type="button"
+                    onClick={onReset}
+                    disabled={resetDisabled}
+                    className="shrink-0 rounded-full border border-paper-edge bg-paper px-3 py-1.5 font-body text-xs font-semibold text-ink transition hover:cursor-pointer hover:bg-paper/90 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                    Reset to defaults
+                </button>
+            </div>
+            <div className="space-y-2">{children}</div>
+        </div>
+    );
+}
+
+function AppearancePreview({ colors }: { colors: AppearanceColors }) {
+    const cards: { label: string; pin: string }[] = [
+        { label: "Today", pin: colors.pinTodo },
+        { label: "Note", pin: colors.pinNote },
+        { label: "Pomodoro", pin: colors.pinTimer },
+        { label: "Image", pin: colors.pinImage },
+        { label: "Calendar", pin: colors.pinCalendar },
+    ];
+
+    return (
+        <div
+            className="space-y-3 rounded-2xl border border-paper-edge p-4"
+            style={{
+                backgroundColor: colors.board,
+                backgroundImage: `radial-gradient(${colors.boardLine} 1px, transparent 1px)`,
+                backgroundSize: "20px 20px",
+            }}
+        >
+            <p
+                className="font-body text-xs font-semibold uppercase tracking-[0.2em]"
+                style={{ color: colors.ink }}
+            >
+                Preview
+            </p>
+            <div className="flex flex-wrap gap-3">
+                {cards.map((card) => (
+                    <div
+                        key={card.label}
+                        className="w-28 rounded-lg border p-2 shadow-sm"
+                        style={{
+                            backgroundColor: colors.paper,
+                            borderColor: colors.paperEdge,
+                        }}
+                    >
+                        <span
+                            className="mb-1.5 block h-2 w-2 rounded-full"
+                            style={{ backgroundColor: card.pin }}
+                        />
+                        <span
+                            className="block font-body text-[11px] font-medium"
+                            style={{ color: colors.ink }}
+                        >
+                            {card.label}
+                        </span>
+                        <span
+                            className="mt-0.5 block font-body text-[10px]"
+                            style={{ color: colors.inkSoft }}
+                        >
+                            Sample text
+                        </span>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
 export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
     function SettingsPage({ activeSection, onSelectSection }, ref) {
         const { user } = useAuth();
@@ -130,7 +274,16 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
         const storeCalendarSettings = useCalendarStore((s) => s.settings);
         const calendarLoading = useCalendarStore((s) => s.settingsLoading);
         const calendarLoadError = useCalendarStore((s) => s.settingsError);
-        const saveStoreCalendarSettings = useCalendarStore((s) => s.saveSettings);
+        const saveStoreCalendarSettings = useCalendarStore(
+            (s) => s.saveSettings,
+        );
+        const storeAppearanceSettings = useAppearanceStore((s) => s.settings);
+        const appearanceLoading = useAppearanceStore((s) => s.settingsLoading);
+        const appearanceLoadError = useAppearanceStore((s) => s.settingsError);
+        const saveStoreAppearanceSettings = useAppearanceStore(
+            (s) => s.saveSettings,
+        );
+        const prefersDark = usePrefersDark();
 
         // ----- Account section state -----
         const initialFirstName =
@@ -169,13 +322,28 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
         const [calendarForm, setCalendarForm] = useState<CalendarSettings>(
             storeCalendarSettings,
         );
-        const [savedCalendarForm, setSavedCalendarForm] = useState<CalendarSettings>(
-            storeCalendarSettings,
-        );
+        const [savedCalendarForm, setSavedCalendarForm] =
+            useState<CalendarSettings>(storeCalendarSettings);
         const [calendarSynced, setCalendarSynced] = useState(false);
         const [calendarError, setCalendarError] = useState<string | null>(null);
-        const [calendarSuccess, setCalendarSuccess] = useState<string | null>(null);
+        const [calendarSuccess, setCalendarSuccess] = useState<string | null>(
+            null,
+        );
         const [calendarSaving, setCalendarSaving] = useState(false);
+
+        // ----- Appearance section state -----
+        const [appearanceForm, setAppearanceForm] =
+            useState<AppearanceSettings>(() => storeAppearanceSettings);
+        const [savedAppearanceForm, setSavedAppearanceForm] =
+            useState<AppearanceSettings>(() => storeAppearanceSettings);
+        const [appearanceSynced, setAppearanceSynced] = useState(false);
+        const [appearanceError, setAppearanceError] = useState<string | null>(
+            null,
+        );
+        const [appearanceSuccess, setAppearanceSuccess] = useState<
+            string | null
+        >(null);
+        const [appearanceSaving, setAppearanceSaving] = useState(false);
 
         // Sync the editable Pomodoro form from the store once its initial load
         // (kicked off at login) resolves, without clobbering in-progress edits.
@@ -196,6 +364,83 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
             setCalendarSynced(true);
         }, [calendarLoading, calendarSynced, storeCalendarSettings]);
 
+        useEffect(() => {
+            if (appearanceLoading || appearanceSynced) return;
+            const form = storeAppearanceSettings ?? DEFAULT_APPEARANCE;
+            setAppearanceForm(form);
+            setSavedAppearanceForm(form);
+            setAppearanceSynced(true);
+        }, [appearanceLoading, appearanceSynced, storeAppearanceSettings]);
+
+        // ----- Appearance handlers -----
+        function updateAppearanceColor(
+            field: keyof AppearanceColors,
+            value: string,
+        ) {
+            setAppearanceForm((f) => ({
+                theme: "custom",
+                colors: { ...f.colors, [field]: value },
+            }));
+        }
+
+        function handleThemeChange(theme: ThemeMode) {
+            if (theme === "custom") {
+                // Switching to Custom on its own shouldn't change any colors.
+                setAppearanceForm((f) => ({ ...f, theme: "custom" }));
+                return;
+            }
+            const colors =
+                theme === "dark"
+                    ? DARK_COLORS
+                    : theme === "system"
+                      ? prefersDark
+                          ? DARK_COLORS
+                          : LIGHT_COLORS
+                      : LIGHT_COLORS;
+            setAppearanceForm({ theme, colors });
+        }
+
+        function resetAppearanceCategory(fields: (keyof AppearanceColors)[]) {
+            setAppearanceForm((f) => {
+                const colors = { ...f.colors };
+                fields.forEach((field) => {
+                    colors[field] = LIGHT_COLORS[field];
+                });
+                return { theme: "custom", colors };
+            });
+        }
+
+        function handleResetAllAppearance() {
+            setAppearanceForm({ theme: "system", colors: LIGHT_COLORS });
+            setAppearanceError(null);
+        }
+
+        const CANVAS_FIELDS: (keyof AppearanceColors)[] = [
+            "board",
+            "boardLine",
+        ];
+        const WIDGET_FIELDS: (keyof AppearanceColors)[] = [
+            "paper",
+            "paperEdge",
+        ];
+        const ACCENT_FIELDS: (keyof AppearanceColors)[] = [
+            "pinTodo",
+            "pinNote",
+            "pinTimer",
+            "pinImage",
+            "pinCalendar",
+        ];
+
+        function categoryAtDefaults(fields: (keyof AppearanceColors)[]) {
+            return fields.every(
+                (field) => appearanceForm.colors[field] === LIGHT_COLORS[field],
+            );
+        }
+
+        const isAppearanceAtDefaults =
+            appearanceForm.theme === "system" &&
+            colorsEqual(appearanceForm.colors, LIGHT_COLORS);
+
         function updatePomodoroField<K extends keyof PomodoroFormState>(
             key: K,
             value: PomodoroFormState[K],
@@ -214,8 +459,15 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
             JSON.stringify(pomodoroForm) !== JSON.stringify(savedPomodoroForm);
         const isCalendarDirty =
             JSON.stringify(calendarForm) !== JSON.stringify(savedCalendarForm);
+        const isAppearanceDirty =
+            JSON.stringify(appearanceForm) !==
+            JSON.stringify(savedAppearanceForm);
 
-        const isDirty = isAccountDirty || isPomodoroDirty || isCalendarDirty;
+        const isDirty =
+            isAccountDirty ||
+            isPomodoroDirty ||
+            isCalendarDirty ||
+            isAppearanceDirty;
 
         // ----- Leave-without-saving confirmation -----
         const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
@@ -242,6 +494,11 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
             setCalendarError(null);
         }
 
+        function resetAppearanceFields() {
+            setAppearanceForm(savedAppearanceForm);
+            setAppearanceError(null);
+        }
+
         function requestNavigation(action: () => void) {
             if (isDirty) {
                 pendingActionRef.current = action;
@@ -266,6 +523,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
             resetAccountFields();
             resetPomodoroFields();
             resetCalendarFields();
+            resetAppearanceFields();
             setShowLeaveConfirm(false);
             const action = pendingActionRef.current;
             pendingActionRef.current = null;
@@ -463,29 +721,53 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
             setCalendarSaving(false);
         }
 
+        async function handleSaveAppearance() {
+            if (!user) {
+                setAppearanceError("You must be signed in to update settings.");
+                return;
+            }
+            setAppearanceError(null);
+            setAppearanceSuccess(null);
+            setAppearanceSaving(true);
+            const saved = await saveStoreAppearanceSettings(appearanceForm);
+            if (!saved) {
+                setAppearanceError("Couldn't save Appearance settings.");
+                setAppearanceSaving(false);
+                return;
+            }
+            setSavedAppearanceForm(appearanceForm);
+            setAppearanceSuccess("Appearance settings saved.");
+            window.setTimeout(() => setAppearanceSuccess(null), 4000);
+            setAppearanceSaving(false);
+        }
+
         function handleSaveChanges() {
             if (activeSection === "account") void handleSaveAccount();
             else if (activeSection === "pomodoro") void handleSavePomodoro();
             else if (activeSection === "calendar") void handleSaveCalendar();
+            else if (activeSection === "preferences")
+                void handleSaveAppearance();
         }
 
         const saveDisabled =
-            activeSection === "preferences" ||
             (activeSection === "account" &&
                 (!isAccountDirty || accountSaving)) ||
             (activeSection === "pomodoro" &&
                 (!isPomodoroDirty || pomodoroSaving)) ||
             (activeSection === "calendar" &&
-                (!isCalendarDirty || calendarSaving));
+                (!isCalendarDirty || calendarSaving)) ||
+            (activeSection === "preferences" &&
+                (!isAppearanceDirty || appearanceSaving));
 
         const saving =
             (activeSection === "account" && accountSaving) ||
             (activeSection === "pomodoro" && pomodoroSaving) ||
-            (activeSection === "calendar" && calendarSaving);
+            (activeSection === "calendar" && calendarSaving) ||
+            (activeSection === "preferences" && appearanceSaving);
 
         return (
-            <div className="flex h-full w-full flex-col bg-board px-4 py-6 sm:px-6 lg:px-8">
-                <div className="mx-auto flex h-full w-full max-w-6xl flex-col rounded-[28px] border border-paper-edge/80 bg-paper/90 p-4 shadow-[0_16px_48px_rgba(0,0,0,0.2)] backdrop-blur sm:p-6">
+            <div className="flex h-full min-h-0 w-full flex-col bg-board px-4 py-6 sm:px-6 lg:px-8">
+                <div className="mx-auto flex h-full min-h-0 w-full max-w-6xl flex-col rounded-[28px] border border-paper-edge/80 bg-paper/90 p-4 shadow-[0_16px_48px_rgba(0,0,0,0.2)] backdrop-blur sm:p-6">
                     <div className="mb-6 flex items-center justify-between border-b border-paper-edge pb-4">
                         <div>
                             <p className="font-body text-xs uppercase tracking-[0.28em] text-ink-soft">
@@ -505,8 +787,8 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                         </button>
                     </div>
 
-                    <div className="flex flex-1 flex-col gap-6 lg:flex-row">
-                        <div className="flex min-h-55 flex-col rounded-2xl border border-paper-edge bg-board/50 p-3 lg:w-56">
+                    <div className="flex min-h-0 flex-1 flex-col gap-6 lg:flex-row">
+                        <div className="flex min-h-0 flex-col rounded-2xl border border-paper-edge bg-board/50 p-3 lg:w-56">
                             {SECTIONS.map((section) => (
                                 <button
                                     key={section.key}
@@ -525,7 +807,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                             ))}
                         </div>
 
-                        <div className="flex-1 rounded-2xl border border-paper-edge bg-paper/70 p-4 sm:p-6">
+                        <div className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-paper-edge bg-paper/70 p-4 sm:p-6">
                             {activeSection === "account" && (
                                 <div className="space-y-5">
                                     {accountView === "details" && (
@@ -814,10 +1096,224 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                             )}
 
                             {activeSection === "preferences" && (
-                                <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-paper-edge bg-board/40 p-8 text-center">
-                                    <p className="font-body text-base text-ink-soft">
-                                        Coming soon.
-                                    </p>
+                                <div className="space-y-5">
+                                    <div className="flex items-start justify-between gap-4">
+                                        <div>
+                                            <h2 className="font-body text-lg font-semibold text-ink">
+                                                Appearance
+                                            </h2>
+                                            <p className="mt-1 font-body text-sm text-ink-soft">
+                                                Customize the board, widgets,
+                                                and accent colors.
+                                            </p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={handleResetAllAppearance}
+                                            disabled={isAppearanceAtDefaults}
+                                            className="shrink-0 rounded-full border border-paper-edge bg-paper px-4 py-2 font-body text-sm font-semibold text-ink transition hover:cursor-pointer hover:bg-paper/90 disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                            Reset all to defaults
+                                        </button>
+                                    </div>
+
+                                    {appearanceLoadError && (
+                                        <p className="text-xs text-pin-timer">
+                                            Couldn't load your saved Appearance
+                                            settings, showing defaults instead.
+                                        </p>
+                                    )}
+
+                                    <label className="block max-w-xs space-y-2">
+                                        <span className="font-body text-sm font-medium text-ink">
+                                            Theme
+                                        </span>
+                                        <select
+                                            value={appearanceForm.theme}
+                                            onChange={(event) =>
+                                                handleThemeChange(
+                                                    event.target
+                                                        .value as ThemeMode,
+                                                )
+                                            }
+                                            className={inputClass}
+                                        >
+                                            <option value="light">
+                                                Light Mode
+                                            </option>
+                                            <option value="dark">
+                                                Dark Mode
+                                            </option>
+                                            <option value="system">
+                                                System Default
+                                            </option>
+                                            <option value="custom">
+                                                Custom
+                                            </option>
+                                        </select>
+                                    </label>
+
+                                    <AppearancePreview
+                                        colors={appearanceForm.colors}
+                                    />
+
+                                    <ColorCategoryCard
+                                        title="Canvas"
+                                        description="The bulletin board backdrop."
+                                        resetDisabled={categoryAtDefaults(
+                                            CANVAS_FIELDS,
+                                        )}
+                                        onReset={() =>
+                                            resetAppearanceCategory(
+                                                CANVAS_FIELDS,
+                                            )
+                                        }
+                                    >
+                                        <ColorField
+                                            label="Board"
+                                            value={appearanceForm.colors.board}
+                                            onChange={(value) =>
+                                                updateAppearanceColor(
+                                                    "board",
+                                                    value,
+                                                )
+                                            }
+                                        />
+                                        <ColorField
+                                            label="Board dot pattern"
+                                            value={
+                                                appearanceForm.colors.boardLine
+                                            }
+                                            onChange={(value) =>
+                                                updateAppearanceColor(
+                                                    "boardLine",
+                                                    value,
+                                                )
+                                            }
+                                        />
+                                    </ColorCategoryCard>
+
+                                    <ColorCategoryCard
+                                        title="Widgets"
+                                        description="The paper card background shared by every widget."
+                                        resetDisabled={categoryAtDefaults(
+                                            WIDGET_FIELDS,
+                                        )}
+                                        onReset={() =>
+                                            resetAppearanceCategory(
+                                                WIDGET_FIELDS,
+                                            )
+                                        }
+                                    >
+                                        <ColorField
+                                            label="Paper"
+                                            value={appearanceForm.colors.paper}
+                                            onChange={(value) =>
+                                                updateAppearanceColor(
+                                                    "paper",
+                                                    value,
+                                                )
+                                            }
+                                        />
+                                        <ColorField
+                                            label="Paper edge"
+                                            value={
+                                                appearanceForm.colors.paperEdge
+                                            }
+                                            onChange={(value) =>
+                                                updateAppearanceColor(
+                                                    "paperEdge",
+                                                    value,
+                                                )
+                                            }
+                                        />
+                                    </ColorCategoryCard>
+
+                                    <ColorCategoryCard
+                                        title="Accents"
+                                        description="The pin color for each widget type."
+                                        resetDisabled={categoryAtDefaults(
+                                            ACCENT_FIELDS,
+                                        )}
+                                        onReset={() =>
+                                            resetAppearanceCategory(
+                                                ACCENT_FIELDS,
+                                            )
+                                        }
+                                    >
+                                        <ColorField
+                                            label="Today"
+                                            value={
+                                                appearanceForm.colors.pinTodo
+                                            }
+                                            onChange={(value) =>
+                                                updateAppearanceColor(
+                                                    "pinTodo",
+                                                    value,
+                                                )
+                                            }
+                                        />
+                                        <ColorField
+                                            label="Note"
+                                            value={
+                                                appearanceForm.colors.pinNote
+                                            }
+                                            onChange={(value) =>
+                                                updateAppearanceColor(
+                                                    "pinNote",
+                                                    value,
+                                                )
+                                            }
+                                        />
+                                        <ColorField
+                                            label="Pomodoro"
+                                            value={
+                                                appearanceForm.colors.pinTimer
+                                            }
+                                            onChange={(value) =>
+                                                updateAppearanceColor(
+                                                    "pinTimer",
+                                                    value,
+                                                )
+                                            }
+                                        />
+                                        <ColorField
+                                            label="Image"
+                                            value={
+                                                appearanceForm.colors.pinImage
+                                            }
+                                            onChange={(value) =>
+                                                updateAppearanceColor(
+                                                    "pinImage",
+                                                    value,
+                                                )
+                                            }
+                                        />
+                                        <ColorField
+                                            label="Calendar"
+                                            value={
+                                                appearanceForm.colors
+                                                    .pinCalendar
+                                            }
+                                            onChange={(value) =>
+                                                updateAppearanceColor(
+                                                    "pinCalendar",
+                                                    value,
+                                                )
+                                            }
+                                        />
+                                    </ColorCategoryCard>
+
+                                    {appearanceError && (
+                                        <p className="text-xs text-pin-timer">
+                                            {appearanceError}
+                                        </p>
+                                    )}
+                                    {appearanceSuccess && (
+                                        <p className="text-xs text-pin-todo">
+                                            {appearanceSuccess}
+                                        </p>
+                                    )}
                                 </div>
                             )}
 
@@ -828,64 +1324,184 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                                             Calendar
                                         </h2>
                                         <p className="mt-1 font-body text-sm text-ink-soft">
-                                            Choose how your calendar displays dates and times.
+                                            Choose how your calendar displays
+                                            dates and times.
                                         </p>
                                     </div>
 
                                     {calendarLoadError && (
                                         <p className="text-xs text-pin-timer">
-                                            Couldn't load your saved Calendar settings, showing defaults instead.
+                                            Couldn't load your saved Calendar
+                                            settings, showing defaults instead.
                                         </p>
                                     )}
 
                                     <div className="grid gap-4 md:grid-cols-2">
                                         <label className="block space-y-2">
-                                            <span className="font-body text-sm font-medium text-ink">Preferred week start</span>
-                                            <select value={calendarForm.weekStart} onChange={(event) => setCalendarForm({ ...calendarForm, weekStart: Number(event.target.value) })} className={inputClass}>
-                                                <option value={0}>Sunday</option>
-                                                <option value={1}>Monday</option>
-                                                <option value={2}>Tuesday</option>
-                                                <option value={3}>Wednesday</option>
-                                                <option value={4}>Thursday</option>
-                                                <option value={5}>Friday</option>
-                                                <option value={6}>Saturday</option>
+                                            <span className="font-body text-sm font-medium text-ink">
+                                                Preferred week start
+                                            </span>
+                                            <select
+                                                value={calendarForm.weekStart}
+                                                onChange={(event) =>
+                                                    setCalendarForm({
+                                                        ...calendarForm,
+                                                        weekStart: Number(
+                                                            event.target.value,
+                                                        ),
+                                                    })
+                                                }
+                                                className={inputClass}
+                                            >
+                                                <option value={0}>
+                                                    Sunday
+                                                </option>
+                                                <option value={1}>
+                                                    Monday
+                                                </option>
+                                                <option value={2}>
+                                                    Tuesday
+                                                </option>
+                                                <option value={3}>
+                                                    Wednesday
+                                                </option>
+                                                <option value={4}>
+                                                    Thursday
+                                                </option>
+                                                <option value={5}>
+                                                    Friday
+                                                </option>
+                                                <option value={6}>
+                                                    Saturday
+                                                </option>
                                             </select>
                                         </label>
 
                                         <label className="block space-y-2">
-                                            <span className="font-body text-sm font-medium text-ink">Date format</span>
-                                            <select value={calendarForm.dateFormat} onChange={(event) => setCalendarForm({ ...calendarForm, dateFormat: event.target.value as CalendarSettings["dateFormat"] })} className={inputClass}>
-                                                <option value="MM/DD/YYYY">MM/DD/YYYY</option>
-                                                <option value="DD/MM/YYYY">DD/MM/YYYY</option>
-                                                <option value="YYYY-MM-DD">YYYY-MM-DD</option>
+                                            <span className="font-body text-sm font-medium text-ink">
+                                                Date format
+                                            </span>
+                                            <select
+                                                value={calendarForm.dateFormat}
+                                                onChange={(event) =>
+                                                    setCalendarForm({
+                                                        ...calendarForm,
+                                                        dateFormat: event.target
+                                                            .value as CalendarSettings["dateFormat"],
+                                                    })
+                                                }
+                                                className={inputClass}
+                                            >
+                                                <option value="MM/DD/YYYY">
+                                                    MM/DD/YYYY
+                                                </option>
+                                                <option value="DD/MM/YYYY">
+                                                    DD/MM/YYYY
+                                                </option>
+                                                <option value="YYYY-MM-DD">
+                                                    YYYY-MM-DD
+                                                </option>
                                             </select>
                                         </label>
 
                                         <label className="block space-y-2">
-                                            <span className="font-body text-sm font-medium text-ink">Time format</span>
-                                            <select value={calendarForm.timeFormat} onChange={(event) => setCalendarForm({ ...calendarForm, timeFormat: event.target.value as CalendarSettings["timeFormat"] })} className={inputClass}>
-                                                <option value="12h">12-hour (AM/PM)</option>
-                                                <option value="24h">24-hour</option>
+                                            <span className="font-body text-sm font-medium text-ink">
+                                                Time format
+                                            </span>
+                                            <select
+                                                value={calendarForm.timeFormat}
+                                                onChange={(event) =>
+                                                    setCalendarForm({
+                                                        ...calendarForm,
+                                                        timeFormat: event.target
+                                                            .value as CalendarSettings["timeFormat"],
+                                                    })
+                                                }
+                                                className={inputClass}
+                                            >
+                                                <option value="12h">
+                                                    12-hour (AM/PM)
+                                                </option>
+                                                <option value="24h">
+                                                    24-hour
+                                                </option>
                                             </select>
                                         </label>
 
                                         <label className="block space-y-2">
-                                            <span className="font-body text-sm font-medium text-ink">Time zone</span>
-                                            <select value={calendarForm.timeZone} onChange={(event) => setCalendarForm({ ...calendarForm, timeZone: event.target.value })} className={inputClass}>
-                                                {(typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : [calendarForm.timeZone]).map((zone) => (
-                                                    <option key={zone} value={zone}>{zone.replaceAll("_", " ")}</option>
+                                            <span className="font-body text-sm font-medium text-ink">
+                                                Time zone
+                                            </span>
+                                            <select
+                                                value={calendarForm.timeZone}
+                                                onChange={(event) =>
+                                                    setCalendarForm({
+                                                        ...calendarForm,
+                                                        timeZone:
+                                                            event.target.value,
+                                                    })
+                                                }
+                                                className={inputClass}
+                                            >
+                                                {(typeof Intl.supportedValuesOf ===
+                                                "function"
+                                                    ? Intl.supportedValuesOf(
+                                                          "timeZone",
+                                                      )
+                                                    : [calendarForm.timeZone]
+                                                ).map((zone) => (
+                                                    <option
+                                                        key={zone}
+                                                        value={zone}
+                                                    >
+                                                        {zone.replaceAll(
+                                                            "_",
+                                                            " ",
+                                                        )}
+                                                    </option>
                                                 ))}
                                             </select>
                                         </label>
 
                                         <label className="block space-y-2 md:col-span-2">
-                                            <span className="font-body text-sm font-medium text-ink">Default event duration (minutes)</span>
-                                            <input type="number" min="15" step="15" value={calendarForm.defaultEventDuration} onChange={(event) => setCalendarForm({ ...calendarForm, defaultEventDuration: Math.max(15, Number(event.target.value)) })} className={inputClass} />
+                                            <span className="font-body text-sm font-medium text-ink">
+                                                Default event duration (minutes)
+                                            </span>
+                                            <input
+                                                type="number"
+                                                min="15"
+                                                step="15"
+                                                value={
+                                                    calendarForm.defaultEventDuration
+                                                }
+                                                onChange={(event) =>
+                                                    setCalendarForm({
+                                                        ...calendarForm,
+                                                        defaultEventDuration:
+                                                            Math.max(
+                                                                15,
+                                                                Number(
+                                                                    event.target
+                                                                        .value,
+                                                                ),
+                                                            ),
+                                                    })
+                                                }
+                                                className={inputClass}
+                                            />
                                         </label>
                                     </div>
 
-                                    {calendarError && <p className="text-xs text-pin-timer">{calendarError}</p>}
-                                    {calendarSuccess && <p className="text-xs text-pin-todo">{calendarSuccess}</p>}
+                                    {calendarError && (
+                                        <p className="text-xs text-pin-timer">
+                                            {calendarError}
+                                        </p>
+                                    )}
+                                    {calendarSuccess && (
+                                        <p className="text-xs text-pin-todo">
+                                            {calendarSuccess}
+                                        </p>
+                                    )}
                                 </div>
                             )}
 

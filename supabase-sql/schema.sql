@@ -140,3 +140,21 @@ alter table tasks
 -- `layout`, which only positions widgets on the free-form desktop canvas.
 alter table board_widgets
   add column mobile_order integer not null default 0;
+
+-- Appearance settings. Color columns are only meaningful when
+-- appearance_theme = 'custom' -- Light/Dark/System resolve to built-in
+-- palettes in code instead. Nullable, falling back to the light defaults in
+-- code, same as calendar_time_zone above.
+alter table profiles
+  add column appearance_theme text not null default 'light',
+  add column appearance_color_board text,
+  add column appearance_color_board_line text,
+  add column appearance_color_paper text,
+  add column appearance_color_paper_edge text,
+  add column appearance_color_ink text,
+  add column appearance_color_ink_soft text,
+  add column appearance_color_pin_todo text,
+  add column appearance_color_pin_note text,
+  add column appearance_color_pin_timer text,
+  add column appearance_color_pin_image text,
+  add column appearance_color_pin_calendar text;

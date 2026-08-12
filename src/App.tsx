@@ -12,6 +12,12 @@ import { AuthScreen } from "./auth/AuthScreen";
 import { useTaskStore } from "./store/taskStore";
 import { useBoardStore } from "./store/boardStore";
 import { useCalendarStore } from "./store/calendarStore";
+import { useAppearanceStore } from "./store/appearanceStore";
+import {
+    applyColorsToDocument,
+    resolveColors,
+    usePrefersDark,
+} from "./lib/appearance";
 import { CalendarPage } from "./components/CalendarPage";
 
 type View = "board" | "tasks" | "calendar" | "settings";
@@ -33,9 +39,13 @@ export default function App() {
     const clearWidgets = useBoardStore((s) => s.clear);
     const loadCalendar = useCalendarStore((s) => s.load);
     const clearCalendar = useCalendarStore((s) => s.clear);
+    const loadAppearance = useAppearanceStore((s) => s.load);
+    const clearAppearance = useAppearanceStore((s) => s.clear);
+    const appearanceSettings = useAppearanceStore((s) => s.settings);
     const tasksLoading = useTaskStore((s) => s.loading);
     const widgetsLoading = useBoardStore((s) => s.loading);
     const dataLoading = tasksLoading || widgetsLoading;
+    const prefersDark = usePrefersDark();
 
     useEffect(() => {
         if (user) {
@@ -43,14 +53,22 @@ export default function App() {
             loadWidgets(user.id);
             loadPomodoroSettings(user.id);
             loadCalendar(user.id);
+            loadAppearance(user.id);
         } else {
             clearTasks();
             clearWidgets();
             clearCalendar();
+            clearAppearance();
         }
         // Re-run whenever the logged-in user changes (login, logout, or switching accounts)
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id]);
+
+    // Keep the live CSS variables in sync with the saved appearance settings,
+    // and with the OS color scheme while "System Default" is selected.
+    useEffect(() => {
+        applyColorsToDocument(resolveColors(appearanceSettings, prefersDark));
+    }, [appearanceSettings, prefersDark]);
 
     // Any navigation away from Settings (switching views, switching settings
     // tabs, or signing out) is routed through this so unsaved changes on the
@@ -266,4 +284,3 @@ export default function App() {
         </div>
     );
 }
-

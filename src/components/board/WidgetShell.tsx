@@ -1,12 +1,12 @@
-import type { ReactNode } from "react";
+import type { HTMLAttributes, ReactNode } from "react";
 import type { WidgetType } from "../../types";
 
 const PIN_COLOR: Record<WidgetType, string> = {
     todo: "var(--color-pin-todo)",
     note: "var(--color-pin-note)",
     timer: "var(--color-pin-timer)",
-    image: "var(--color-pin-note)",
-    calendar: "var(--color-pin-todo)",
+    image: "var(--color-pin-image)",
+    calendar: "var(--color-pin-calendar)",
 };
 
 interface WidgetShellProps {
@@ -14,6 +14,8 @@ interface WidgetShellProps {
     title: string;
     onRemove: () => void;
     mobile?: boolean;
+    /** Grab handle for reordering in the mobile stacked view; ignored on desktop. */
+    dragHandleProps?: HTMLAttributes<HTMLSpanElement>;
     children: ReactNode;
 }
 
@@ -22,6 +24,7 @@ export function WidgetShell({
     title,
     onRemove,
     mobile = false,
+    dragHandleProps,
     children,
 }: WidgetShellProps) {
     return (
@@ -49,9 +52,25 @@ export function WidgetShell({
             )}
             {mobile && (
                 <div className="flex items-center justify-between rounded-t-lg px-4 pt-4 pb-2">
-                    <span className="font-display text-[13px] font-semibold uppercase tracking-wide text-ink-soft">
-                        {title}
-                    </span>
+                    <div className="flex min-w-0 items-center gap-2">
+                        {dragHandleProps && (
+                            <span
+                                {...dragHandleProps}
+                                className="shrink-0 cursor-grab touch-none text-ink-soft/50 active:cursor-grabbing"
+                                aria-hidden="true"
+                            >
+                                <img
+                                    src="/grip-vertical-solid-full.svg"
+                                    width={9}
+                                    height={14}
+                                    alt=""
+                                />
+                            </span>
+                        )}
+                        <span className="font-display text-[13px] font-semibold uppercase tracking-wide text-ink-soft">
+                            {title}
+                        </span>
+                    </div>
                     <button
                         onClick={onRemove}
                         className="rounded px-1.5 text-ink-soft transition hover:bg-black/5 hover:text-ink"

@@ -65,3 +65,26 @@ export interface Task {
     /** Drag-reorder position among today's focus tasks, as shown in the Today widget. */
     sortOrder: number;
 }
+
+export type ThemeMode = "light" | "dark" | "system" | "custom";
+
+export interface AppearanceColors {
+    board: string;
+    boardLine: string;
+    paper: string;
+    paperEdge: string;
+    ink: string;
+    inkSoft: string;
+    pinTodo: string;
+    pinNote: string;
+    pinTimer: string;
+    pinImage: string;
+    pinCalendar: string;
+}
+
+export interface AppearanceSettings {
+    theme: ThemeMode;
+    /** The user's custom color set. Only actually applied when `theme` is "custom" --
+     *  Light/Dark/System always resolve to their built-in palettes instead. */
+    colors: AppearanceColors;
+}
