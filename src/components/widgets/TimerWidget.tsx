@@ -30,6 +30,15 @@ export function TimerWidget({ data }: TimerWidgetProps) {
     const [secondsLeft, setSecondsLeft] = useState(data.focusSeconds);
     const [running, setRunning] = useState(false);
     const intervalRef = useRef<number | null>(null);
+    const previousDurationRef = useRef(data.focusSeconds);
+
+    useEffect(() => {
+        const nextDuration = durationFor(phase, data);
+        if (previousDurationRef.current !== nextDuration) {
+            setSecondsLeft(nextDuration);
+        }
+        previousDurationRef.current = nextDuration;
+    }, [data, phase]);
 
     useEffect(() => {
         if (!running) return;

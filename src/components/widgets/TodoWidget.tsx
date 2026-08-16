@@ -107,9 +107,7 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
                                 onClick={() => setIsAdding(true)}
                                 className="flex min-w-0 flex-1 items-center hover:cursor-pointer text-ink-soft"
                             >
-                                <span className="pr-2.5 text-lg">
-                                    +
-                                </span>
+                                <span className="pr-2.5 text-lg">+</span>
                                 <span>Add new task</span>
                             </button>
                         </>

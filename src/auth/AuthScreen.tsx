@@ -410,7 +410,7 @@ export function AuthScreen() {
                         type={showPassword ? "text" : "password"}
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        className="mb-2 w-full rounded-md border border-paper-edge bg-white px-3 py-2 text-sm text-ink scheme-light focus:outline-none focus:ring-2 focus:ring-pin-todo autofill:[-webkit-text-fill-color:#232320] autofill:[-webkit-box-shadow:0_0_0px_1000px_#fff_inset] autofill:caret-ink"
+                        className="mb-2 w-full rounded-md border border-paper-edge bg-white px-3 py-2 text-sm text-[#232320] [color-scheme:light] focus:outline-none focus:ring-2 focus:ring-pin-todo autofill:[-webkit-text-fill-color:#232320] autofill:[-webkit-box-shadow:0_0_0px_1000px_#fff_inset] autofill:caret-ink"
                     />
 
                     <ul className="mb-3 space-y-0.5">
@@ -538,7 +538,7 @@ export function AuthScreen() {
                     onChange={(e) => setPassword(e.target.value)}
                     className={
                         mode === "signup"
-                            ? "mb-2 w-full rounded-md border border-paper-edge bg-white px-3 py-2 text-sm text-ink scheme-light focus:outline-none focus:ring-2 focus:ring-pin-todo autofill:[-webkit-text-fill-color:#232320] autofill:[-webkit-box-shadow:0_0_0px_1000px_#fff_inset] autofill:caret-ink"
+                            ? "mb-2 w-full rounded-md border border-paper-edge bg-white px-3 py-2 text-sm text-[#232320] [color-scheme:light] focus:outline-none focus:ring-2 focus:ring-pin-todo autofill:[-webkit-text-fill-color:#232320] autofill:[-webkit-box-shadow:0_0_0px_1000px_#fff_inset] autofill:caret-ink"
                             : inputClass
                     }
                 />

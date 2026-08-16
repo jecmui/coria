@@ -3,6 +3,7 @@ import { supabase } from "../lib/supabase";
 import type {
     BoardWidget,
     PomodoroSettings,
+    TimerData,
     WidgetLayout,
     WidgetType,
 } from "../types";
@@ -206,7 +207,46 @@ export const useBoardStore = create<BoardState>((set, get) => ({
         });
     },
 
-    setPomodoroSettings: (settings) => set({ pomodoroSettings: settings }),
+    setPomodoroSettings: (settings) => {
+        const timerWidgets = get().widgets.filter(
+            (widget) => widget.type === "timer",
+        );
+
+        set((state) => ({
+            pomodoroSettings: settings,
+            widgets: state.widgets.map((widget) =>
+                widget.type === "timer"
+                    ? {
+                          ...widget,
+                          data: {
+                              ...(widget.data as TimerData),
+                              ...settings,
+                          },
+                      }
+                    : widget,
+            ),
+        }));
+
+        timerWidgets.forEach((widget) => {
+            const nextData = {
+                ...(widget.data as TimerData),
+                ...settings,
+            };
+            scheduleWrite(`data:${widget.id}`, () => {
+                supabase
+                    .from("board_widgets")
+                    .update({ data: nextData })
+                    .eq("id", widget.id)
+                    .then(({ error }) => {
+                        if (error)
+                            console.error(
+                                "Failed to update Pomodoro widget data:",
+                                error.message,
+                            );
+                    });
+            });
+        });
+    },
 
     clear: () =>
         set({

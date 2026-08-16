@@ -77,20 +77,33 @@ const inputClass =
     "w-full rounded-xl border border-paper-edge bg-board/60 px-3 py-2 font-body text-sm text-ink outline-none";
 
 interface PomodoroFormState {
-    focusMinutes: number;
-    shortBreakMinutes: number;
-    longBreakMinutes: number;
-    longBreakInterval: number;
+    focusMinutes: string;
+    shortBreakMinutes: string;
+    longBreakMinutes: string;
+    longBreakInterval: string;
     autoStartBreaks: boolean;
     autoStartFocus: boolean;
 }
 
+type PomodoroNumericField =
+    | "focusMinutes"
+    | "shortBreakMinutes"
+    | "longBreakMinutes"
+    | "longBreakInterval";
+
+const POMODORO_NUMERIC_FIELDS: PomodoroNumericField[] = [
+    "focusMinutes",
+    "shortBreakMinutes",
+    "longBreakMinutes",
+    "longBreakInterval",
+];
+
 function settingsToForm(settings: PomodoroSettings): PomodoroFormState {
     return {
-        focusMinutes: Math.round(settings.focusSeconds / 60),
-        shortBreakMinutes: Math.round(settings.shortBreakSeconds / 60),
-        longBreakMinutes: Math.round(settings.longBreakSeconds / 60),
-        longBreakInterval: settings.longBreakInterval,
+        focusMinutes: String(Math.round(settings.focusSeconds / 60)),
+        shortBreakMinutes: String(Math.round(settings.shortBreakSeconds / 60)),
+        longBreakMinutes: String(Math.round(settings.longBreakSeconds / 60)),
+        longBreakInterval: String(settings.longBreakInterval),
         autoStartBreaks: settings.autoStartBreaks,
         autoStartFocus: settings.autoStartFocus,
     };
@@ -98,12 +111,35 @@ function settingsToForm(settings: PomodoroSettings): PomodoroFormState {
 
 function formToSettings(form: PomodoroFormState): PomodoroSettings {
     return {
-        focusSeconds: form.focusMinutes * 60,
-        shortBreakSeconds: form.shortBreakMinutes * 60,
-        longBreakSeconds: form.longBreakMinutes * 60,
-        longBreakInterval: form.longBreakInterval,
+        focusSeconds: Number(form.focusMinutes) * 60,
+        shortBreakSeconds: Number(form.shortBreakMinutes) * 60,
+        longBreakSeconds: Number(form.longBreakMinutes) * 60,
+        longBreakInterval: Number(form.longBreakInterval),
         autoStartBreaks: form.autoStartBreaks,
         autoStartFocus: form.autoStartFocus,
+    };
+}
+
+function getPomodoroFieldError(value: string): string | null {
+    if (!/^[0-9]+$/.test(value)) {
+        return "Enter a positive whole number greater than 0.";
+    }
+
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed) || parsed < 1) {
+        return "Enter a positive whole number greater than 0.";
+    }
+
+    return null;
+}
+
+function normalizePomodoroForm(form: PomodoroFormState): PomodoroFormState {
+    return {
+        ...form,
+        focusMinutes: String(Number(form.focusMinutes)),
+        shortBreakMinutes: String(Number(form.shortBreakMinutes)),
+        longBreakMinutes: String(Number(form.longBreakMinutes)),
+        longBreakInterval: String(Number(form.longBreakInterval)),
     };
 }
 
@@ -445,8 +481,32 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
             key: K,
             value: PomodoroFormState[K],
         ) {
+            if (POMODORO_NUMERIC_FIELDS.includes(key as PomodoroNumericField)) {
+                const numericValue = String(value)
+                    .replace(/\D/g, "")
+                    .slice(0, 3);
+                setPomodoroForm((f) => ({ ...f, [key]: numericValue }));
+                return;
+            }
+
             setPomodoroForm((f) => ({ ...f, [key]: value }));
         }
+
+        const pomodoroFieldErrors = {
+            focusMinutes: getPomodoroFieldError(pomodoroForm.focusMinutes),
+            shortBreakMinutes: getPomodoroFieldError(
+                pomodoroForm.shortBreakMinutes,
+            ),
+            longBreakMinutes: getPomodoroFieldError(
+                pomodoroForm.longBreakMinutes,
+            ),
+            longBreakInterval: getPomodoroFieldError(
+                pomodoroForm.longBreakInterval,
+            ),
+        } satisfies Record<PomodoroNumericField, string | null>;
+        const isPomodoroValid = POMODORO_NUMERIC_FIELDS.every(
+            (field) => !pomodoroFieldErrors[field],
+        );
 
         const isAccountDirty =
             email !== savedEmail ||
@@ -671,11 +731,19 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                 return;
             }
 
+            if (!isPomodoroValid) {
+                setPomodoroError(
+                    "All Pomodoro values must be positive whole numbers greater than 0.",
+                );
+                return;
+            }
+
             setPomodoroError(null);
             setPomodoroSuccess(null);
             setPomodoroSaving(true);
 
-            const settings = formToSettings(pomodoroForm);
+            const normalizedForm = normalizePomodoroForm(pomodoroForm);
+            const settings = formToSettings(normalizedForm);
             const { error } = await supabase
                 .from("profiles")
                 .update({
@@ -694,8 +762,9 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                 return;
             }
 
+            setPomodoroForm(normalizedForm);
             setStorePomodoroSettings(settings);
-            setSavedPomodoroForm(pomodoroForm);
+            setSavedPomodoroForm(normalizedForm);
             setPomodoroSuccess("Pomodoro settings saved.");
             window.setTimeout(() => setPomodoroSuccess(null), 4000);
             setPomodoroSaving(false);
@@ -753,7 +822,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
             (activeSection === "account" &&
                 (!isAccountDirty || accountSaving)) ||
             (activeSection === "pomodoro" &&
-                (!isPomodoroDirty || pomodoroSaving)) ||
+                (!isPomodoroDirty || pomodoroSaving || !isPomodoroValid)) ||
             (activeSection === "calendar" &&
                 (!isCalendarDirty || calendarSaving)) ||
             (activeSection === "preferences" &&
@@ -1532,19 +1601,27 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                                             <input
                                                 type="number"
                                                 min="1"
+                                                step="1"
+                                                inputMode="numeric"
+                                                maxLength={3}
                                                 value={
                                                     pomodoroForm.focusMinutes
                                                 }
                                                 onChange={(event) =>
                                                     updatePomodoroField(
                                                         "focusMinutes",
-                                                        Number(
-                                                            event.target.value,
-                                                        ),
+                                                        event.target.value,
                                                     )
                                                 }
                                                 className={inputClass}
                                             />
+                                            {pomodoroFieldErrors.focusMinutes && (
+                                                <p className="text-xs text-pin-timer">
+                                                    {
+                                                        pomodoroFieldErrors.focusMinutes
+                                                    }
+                                                </p>
+                                            )}
                                         </label>
 
                                         <label className="block space-y-2">
@@ -1554,19 +1631,27 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                                             <input
                                                 type="number"
                                                 min="1"
+                                                step="1"
+                                                inputMode="numeric"
+                                                maxLength={3}
                                                 value={
                                                     pomodoroForm.shortBreakMinutes
                                                 }
                                                 onChange={(event) =>
                                                     updatePomodoroField(
                                                         "shortBreakMinutes",
-                                                        Number(
-                                                            event.target.value,
-                                                        ),
+                                                        event.target.value,
                                                     )
                                                 }
                                                 className={inputClass}
                                             />
+                                            {pomodoroFieldErrors.shortBreakMinutes && (
+                                                <p className="text-xs text-pin-timer">
+                                                    {
+                                                        pomodoroFieldErrors.shortBreakMinutes
+                                                    }
+                                                </p>
+                                            )}
                                         </label>
 
                                         <label className="block space-y-2">
@@ -1576,19 +1661,27 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                                             <input
                                                 type="number"
                                                 min="1"
+                                                step="1"
+                                                inputMode="numeric"
+                                                maxLength={3}
                                                 value={
                                                     pomodoroForm.longBreakMinutes
                                                 }
                                                 onChange={(event) =>
                                                     updatePomodoroField(
                                                         "longBreakMinutes",
-                                                        Number(
-                                                            event.target.value,
-                                                        ),
+                                                        event.target.value,
                                                     )
                                                 }
                                                 className={inputClass}
                                             />
+                                            {pomodoroFieldErrors.longBreakMinutes && (
+                                                <p className="text-xs text-pin-timer">
+                                                    {
+                                                        pomodoroFieldErrors.longBreakMinutes
+                                                    }
+                                                </p>
+                                            )}
                                         </label>
 
                                         <label className="block space-y-2">
@@ -1598,19 +1691,27 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                                             <input
                                                 type="number"
                                                 min="1"
+                                                step="1"
+                                                inputMode="numeric"
+                                                maxLength={3}
                                                 value={
                                                     pomodoroForm.longBreakInterval
                                                 }
                                                 onChange={(event) =>
                                                     updatePomodoroField(
                                                         "longBreakInterval",
-                                                        Number(
-                                                            event.target.value,
-                                                        ),
+                                                        event.target.value,
                                                     )
                                                 }
                                                 className={inputClass}
                                             />
+                                            {pomodoroFieldErrors.longBreakInterval && (
+                                                <p className="text-xs text-pin-timer">
+                                                    {
+                                                        pomodoroFieldErrors.longBreakInterval
+                                                    }
+                                                </p>
+                                            )}
                                         </label>
                                     </div>
 
