@@ -88,13 +88,6 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
                                         handleCancel();
                                     }
                                 }}
-                                onBlur={() => {
-                                    if (draft.trim()) {
-                                        handleAdd();
-                                    } else {
-                                        handleCancel();
-                                    }
-                                }}
                                 placeholder="Add a task..."
                                 maxLength={CHARACTER_LIMIT}
                                 className="min-w-0 flex-1 rounded-md border border-paper-edge focus:border-pin-todo bg-paper px-2 py-1 text-sm text-ink focus:outline-none"
@@ -147,7 +140,7 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
                             ref={
                                 containerRef as RefObject<HTMLUListElement | null>
                             }
-                            className="space-y-1.5"
+                            className="space-y-1.5 hover:cursor-grab"
                             style={{
                                 userSelect: draggingId ? "none" : undefined,
                             }}
@@ -201,7 +194,7 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
                                                     task.title,
                                                 )
                                             }
-                                            className={`min-w-0 flex-1 text-left hover:cursor-text ${
+                                            className={`min-w-0 flex-1 text-left hover:cursor-grab active:cursor-grabbing ${
                                                 task.done
                                                     ? "wrap-break-word text-ink-soft line-through"
                                                     : "wrap-break-word text-ink"
@@ -210,19 +203,6 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
                                             {task.title}
                                         </button>
                                     )}
-                                    <span
-                                        className="mt-1 shrink-0 text-ink-soft/50 opacity-0 transition-opacity group-hover:opacity-100"
-                                        aria-hidden="true"
-                                    >
-                                        <img
-                                            src="/grip-vertical-solid-full.svg"
-                                            width={18}
-                                            height={18}
-                                            alt=""
-                                            className="cursor-move"
-                                            draggable="false"
-                                        />
-                                    </span>
                                 </li>
                             ))}
                         </ul>

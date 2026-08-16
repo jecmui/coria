@@ -65,7 +65,9 @@ export default function App() {
     }, [user?.id]);
 
     // Keep the live CSS variables in sync with the saved appearance settings,
-    // and with the OS color scheme while "System Default" is selected.
+    // and with the OS color scheme while "System Default" is selected (this
+    // includes while logged out -- the default settings are theme: "system",
+    // so the auth screens follow the OS preference too).
     useEffect(() => {
         applyColorsToDocument(resolveColors(appearanceSettings, prefersDark));
     }, [appearanceSettings, prefersDark]);

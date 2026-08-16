@@ -258,7 +258,7 @@ export function AuthScreen() {
     }
 
     const inputClass =
-        "mb-3 w-full rounded-md border border-paper-edge bg-white px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-[var(--color-pin-todo)]";
+        "mb-3 w-full rounded-md border border-[#e8e1d0] bg-white px-3 py-2 text-sm text-[#232320] [color-scheme:light] focus:outline-none focus:ring-2 focus:ring-[var(--color-pin-todo)] autofill:[-webkit-text-fill-color:#232320] autofill:[-webkit-box-shadow:0_0_0px_1000px_#fff_inset] autofill:[caret-color:#232320]";
 
     if (mode === "confirmEmail") {
         return (
@@ -299,7 +299,7 @@ export function AuthScreen() {
                         type="button"
                         onClick={handleResend}
                         disabled={cooldownSeconds > 0 || resending}
-                        className="w-full rounded-md bg-pin-todo py-2 text-sm font-medium text-ink disabled:opacity-60"
+                        className="w-full rounded-md bg-pin-todo py-2 text-sm font-medium text-[#232320] [color-scheme:light] disabled:opacity-60"
                     >
                         {resending
                             ? "Sending..."
@@ -378,7 +378,7 @@ export function AuthScreen() {
                         <button
                             type="submit"
                             disabled={submitting}
-                            className="w-full rounded-md bg-pin-todo py-2 text-sm font-medium text-ink disabled:opacity-60 hover:cursor-pointer"
+                            className="w-full rounded-md bg-pin-todo py-2 text-sm font-medium disabled:opacity-60 hover:cursor-pointer text-[#232320] [color-scheme:light]"
                         >
                             {submitting ? "..." : "Send Email"}
                         </button>
@@ -410,7 +410,7 @@ export function AuthScreen() {
                         type={showPassword ? "text" : "password"}
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        className="mb-2 w-full rounded-md border border-paper-edge bg-white px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-pin-todo"
+                        className="mb-2 w-full rounded-md border border-paper-edge bg-white px-3 py-2 text-sm text-ink scheme-light focus:outline-none focus:ring-2 focus:ring-pin-todo autofill:[-webkit-text-fill-color:#232320] autofill:[-webkit-box-shadow:0_0_0px_1000px_#fff_inset] autofill:caret-ink"
                     />
 
                     <ul className="mb-3 space-y-0.5">
@@ -440,14 +440,22 @@ export function AuthScreen() {
                         onChange={(e) => setConfirmPassword(e.target.value)}
                         className={inputClass}
                     />
-
-                    <button
-                        type="button"
+                    <div
+                        className="hover:cursor-pointer flex flex-row items-start mb-4 gap-1.5"
                         onClick={() => setShowPassword((s) => !s)}
-                        className="mb-4 -mt-1 text-xs font-medium text-ink-soft underline decoration-dotted hover:text-ink hover:cursor-pointer"
                     >
-                        {showPassword ? "Hide password" : "Show password"}
-                    </button>
+                        <input
+                            type="checkbox"
+                            checked={showPassword}
+                            className="h-3.5 w-3.5 shrink-0 accent-pin-todo hover:cursor-pointer"
+                        />
+                        <button
+                            type="button"
+                            className="text-xs font-medium text-ink-soft underline decoration-dotted hover:text-ink hover:cursor-pointer"
+                        >
+                            Show password
+                        </button>
+                    </div>
 
                     {error && (
                         <p className="mb-3 text-xs text-pin-timer">{error}</p>
@@ -530,7 +538,7 @@ export function AuthScreen() {
                     onChange={(e) => setPassword(e.target.value)}
                     className={
                         mode === "signup"
-                            ? "mb-2 w-full rounded-md border border-paper-edge bg-white px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-pin-todo"
+                            ? "mb-2 w-full rounded-md border border-paper-edge bg-white px-3 py-2 text-sm text-ink scheme-light focus:outline-none focus:ring-2 focus:ring-pin-todo autofill:[-webkit-text-fill-color:#232320] autofill:[-webkit-box-shadow:0_0_0px_1000px_#fff_inset] autofill:caret-ink"
                             : inputClass
                     }
                 />
@@ -569,13 +577,22 @@ export function AuthScreen() {
                     </>
                 )}
 
-                <button
-                    type="button"
+                <div
+                    className="hover:cursor-pointer flex flex-row items-start mb-4 gap-1.5"
                     onClick={() => setShowPassword((s) => !s)}
-                    className="mb-4 -mt-1 text-xs font-medium text-ink-soft underline decoration-dotted hover:text-ink hover:cursor-pointer"
                 >
-                    {showPassword ? "Hide password" : "Show password"}
-                </button>
+                    <input
+                        type="checkbox"
+                        checked={showPassword}
+                        className="h-3.5 w-3.5 shrink-0 accent-pin-todo hover:cursor-pointer"
+                    />
+                    <button
+                        type="button"
+                        className="text-xs font-medium text-ink-soft underline decoration-dotted hover:text-ink hover:cursor-pointer"
+                    >
+                        Show password
+                    </button>
+                </div>
 
                 {error && (
                     <p className="mb-3 text-xs text-pin-timer">{error}</p>
@@ -584,7 +601,7 @@ export function AuthScreen() {
                 <button
                     type="submit"
                     disabled={submitting}
-                    className="w-full rounded-md bg-pin-todo py-2 text-sm font-medium text-ink disabled:opacity-60 hover:cursor-pointer mb-2"
+                    className="w-full rounded-md bg-pin-todo py-2 text-sm font-medium disabled:opacity-60 hover:cursor-pointer mb-2 text-[#232320] [color-scheme:light]"
                 >
                     {submitting
                         ? "..."
