@@ -3,17 +3,20 @@ import { createPortal } from "react-dom";
 import type { MouseEvent, PointerEvent, RefObject } from "react";
 import { useTaskStore } from "../../store/taskStore";
 import { useDragReorder } from "../../lib/useDragReorder";
+import { ContextMenu } from "../ContextMenu";
+import type { ContextMenuItem } from "../ContextMenu";
 
 interface TodoWidgetProps {
     onOpenFullList: () => void;
 }
 
-const MENU_WIDTH = 180;
-const MENU_HEIGHT = 84;
 /** How far a touch has to travel left before the row's actions are revealed. */
 const SWIPE_THRESHOLD = 40;
 /** Width of the revealed action strip, matched by the row's slide distance. */
 const SWIPE_OFFSET = 76;
+/** Sentinel for the widget-level (blank space) menu in openMenuKeyRef, which
+ *  otherwise holds the id of whichever task's menu is open. */
+const WIDGET_MENU_KEY = "__widget__";
 
 function StarIcon() {
     return (
@@ -66,20 +69,23 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
     const [isAdding, setIsAdding] = useState(false);
     const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
     const [editingDraft, setEditingDraft] = useState("");
-    const [menu, setMenu] = useState<{
-        taskId: string;
-        x: number;
-        y: number;
-    } | null>(null);
+    const [menu, setMenu] = useState<
+        | { kind: "task"; taskId: string; x: number; y: number }
+        | { kind: "widget"; x: number; y: number }
+        | null
+    >(null);
     const [swipedTaskId, setSwipedTaskId] = useState<string | null>(null);
     const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
     const [dontAskAgain, setDontAskAgain] = useState(false);
+    // The task ids most recently cleared from today, so Cmd/Ctrl+Z can restore them.
+    const [lastClear, setLastClear] = useState<string[] | null>(null);
     const inputRef = useRef<HTMLInputElement>(null);
     const editingInputRef = useRef<HTMLInputElement>(null);
-    const menuRef = useRef<HTMLDivElement>(null);
-    // Mirrors the open menu's task so a second right-click on the same row can
-    // be detected before React state has caught up.
-    const menuTaskIdRef = useRef<string | null>(null);
+    const rootRef = useRef<HTMLDivElement>(null);
+    // Mirrors which menu is open (a task id, or the widget-level sentinel) so a
+    // second right-click on the same thing can be detected before React state
+    // has caught up.
+    const openMenuKeyRef = useRef<string | null>(null);
     const swipeStartRef = useRef<{ x: number; y: number; id: string } | null>(
         null,
     );
@@ -88,6 +94,7 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
     const pendingDeleteTask = pendingDeleteId
         ? tasks.find((t) => t.id === pendingDeleteId)
         : undefined;
+    const hasCompletedFocusTask = focusTasks.some((t) => t.done);
 
     useEffect(() => {
         if (isAdding) {
@@ -101,50 +108,33 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
         }
     }, [editingTaskId]);
 
-    // While the custom menu is open: left-clicks outside it close it, right-clicks
-    // outside the task list close it *and* fall through to the browser's own menu,
-    // and Escape or any scroll/resize (the menu is viewport-positioned) closes it.
+    // Restores the most recently cleared tasks to today's list on Cmd/Ctrl+Z,
+    // as long as focus isn't in a text field (which should keep its own
+    // native undo behavior).
     useEffect(() => {
-        if (!menu) return;
-
-        const handleMouseDown = (event: globalThis.MouseEvent) => {
-            if (event.button === 2) return;
-            if (
-                menuRef.current &&
-                !menuRef.current.contains(event.target as Node)
-            ) {
-                closeMenu();
-            }
-        };
-
-        const handleContextMenu = (event: globalThis.MouseEvent) => {
-            const node = event.target as Node | null;
-            if (!node) return;
-            if (containerRef.current?.contains(node)) return;
-            if (menuRef.current?.contains(node)) return;
-            closeMenu();
-        };
+        if (!lastClear) return;
 
         const handleKeyDown = (event: KeyboardEvent) => {
-            if (event.key === "Escape") closeMenu();
+            const isUndo =
+                (event.metaKey || event.ctrlKey) &&
+                !event.shiftKey &&
+                event.key.toLowerCase() === "z";
+            if (!isUndo) return;
+            const target = event.target as HTMLElement | null;
+            if (
+                target &&
+                (target.tagName === "INPUT" || target.tagName === "TEXTAREA")
+            ) {
+                return;
+            }
+            event.preventDefault();
+            lastClear.forEach((taskId) => toggleFocusToday(taskId));
+            setLastClear(null);
         };
 
-        const handleReposition = () => closeMenu();
-
-        document.addEventListener("mousedown", handleMouseDown);
-        document.addEventListener("contextmenu", handleContextMenu);
         document.addEventListener("keydown", handleKeyDown);
-        window.addEventListener("scroll", handleReposition, true);
-        window.addEventListener("resize", handleReposition);
-
-        return () => {
-            document.removeEventListener("mousedown", handleMouseDown);
-            document.removeEventListener("contextmenu", handleContextMenu);
-            document.removeEventListener("keydown", handleKeyDown);
-            window.removeEventListener("scroll", handleReposition, true);
-            window.removeEventListener("resize", handleReposition);
-        };
-    }, [menu, containerRef]);
+        return () => document.removeEventListener("keydown", handleKeyDown);
+    }, [lastClear, toggleFocusToday]);
 
     // Touching anything other than the swiped row slides it back closed.
     useEffect(() => {
@@ -163,7 +153,7 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
     }, [swipedTaskId]);
 
     function closeMenu() {
-        menuTaskIdRef.current = null;
+        openMenuKeyRef.current = null;
         setMenu(null);
     }
 
@@ -193,21 +183,41 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
         setEditingDraft("");
     }
 
-    function handleContextMenu(event: MouseEvent, taskId: string) {
+    function handleTaskContextMenu(event: MouseEvent, taskId: string) {
         // Shift + right-click, right-clicking while editing, and a second
         // right-click on the same row all fall through to the browser's menu.
         if (
             event.shiftKey ||
             editingTaskId === taskId ||
-            menuTaskIdRef.current === taskId
+            openMenuKeyRef.current === taskId
         ) {
             closeMenu();
             return;
         }
         event.preventDefault();
         setSwipedTaskId(null);
-        menuTaskIdRef.current = taskId;
-        setMenu({ taskId, x: event.clientX, y: event.clientY });
+        openMenuKeyRef.current = taskId;
+        setMenu({ kind: "task", taskId, x: event.clientX, y: event.clientY });
+    }
+
+    function handleWidgetContextMenu(event: MouseEvent) {
+        const target = event.target as HTMLElement;
+        // Task rows handle their own menu, and right-clicking into a text
+        // field should keep showing the browser's native (cut/copy/paste) menu.
+        if (
+            target.closest("[data-drag-id]") ||
+            target.closest("input, textarea")
+        ) {
+            return;
+        }
+        if (event.shiftKey || openMenuKeyRef.current === WIDGET_MENU_KEY) {
+            closeMenu();
+            return;
+        }
+        event.preventDefault();
+        setSwipedTaskId(null);
+        openMenuKeyRef.current = WIDGET_MENU_KEY;
+        setMenu({ kind: "widget", x: event.clientX, y: event.clientY });
     }
 
     function handleRemoveFromToday(taskId: string) {
@@ -232,6 +242,24 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
         if (dontAskAgain) setConfirmTaskDelete(false);
         removeTask(pendingDeleteId);
         setPendingDeleteId(null);
+    }
+
+    function handleClearCompleted() {
+        const taskIds = focusTasks.filter((t) => t.done).map((t) => t.id);
+        if (taskIds.length === 0) return;
+        taskIds.forEach((taskId) => toggleFocusToday(taskId));
+        setLastClear(taskIds);
+        closeMenu();
+        setSwipedTaskId(null);
+    }
+
+    function handleClearAll() {
+        const taskIds = focusTasks.map((t) => t.id);
+        if (taskIds.length === 0) return;
+        taskIds.forEach((taskId) => toggleFocusToday(taskId));
+        setLastClear(taskIds);
+        closeMenu();
+        setSwipedTaskId(null);
     }
 
     function handleSwipeStart(event: PointerEvent, taskId: string) {
@@ -266,7 +294,11 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
     }
 
     return (
-        <div className="flex h-full flex-col">
+        <div
+            ref={rootRef}
+            onContextMenu={handleWidgetContextMenu}
+            className="flex h-full flex-col"
+        >
             <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-hidden font-body text-sm hover:overflow-y-auto scrollbar-gutter-stable scrollbar-thin scrollbar-thumb-pin-todo scrollbar-track-transparent">
                 <div className="flex items-center gap-2">
                     {isAdding ? (
@@ -362,7 +394,10 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
                                         onPointerCancel={handleSwipeEnd}
                                         onClickCapture={drag?.onClickCapture}
                                         onContextMenu={(event) =>
-                                            handleContextMenu(event, task.id)
+                                            handleTaskContextMenu(
+                                                event,
+                                                task.id,
+                                            )
                                         }
                                         className={`group/task relative touch-none ${
                                             draggingId === task.id
@@ -486,48 +521,52 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
                 </button>
             </div>
 
-            {/* Portalled: on desktop the widget sits inside a transformed react-rnd
-                wrapper, which would otherwise anchor fixed positioning to the widget. */}
             {menu &&
-                createPortal(
-                    <div
-                        ref={menuRef}
-                        className="fixed z-90 flex flex-col rounded-xl border border-paper-edge bg-paper p-1 shadow-[0_8px_24px_rgba(0,0,0,0.35)]"
-                        style={{
-                            width: MENU_WIDTH,
-                            left: Math.max(
-                                8,
-                                Math.min(
-                                    menu.x,
-                                    window.innerWidth - MENU_WIDTH - 8,
-                                ),
-                            ),
-                            top: Math.max(
-                                8,
-                                Math.min(
-                                    menu.y,
-                                    window.innerHeight - MENU_HEIGHT - 8,
-                                ),
-                            ),
-                        }}
-                    >
-                        <button
-                            type="button"
-                            onClick={() => handleRemoveFromToday(menu.taskId)}
-                            className="rounded-lg px-3 py-2 text-left font-body text-xs font-medium text-ink transition hover:bg-black/5 hover:cursor-pointer"
-                        >
-                            Remove from today
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => handleDeleteTask(menu.taskId)}
-                            className="rounded-lg px-3 py-2 text-left font-body text-xs font-medium text-pin-timer transition hover:bg-black/5 hover:cursor-pointer"
-                        >
-                            Delete task
-                        </button>
-                    </div>,
-                    document.body,
-                )}
+                (() => {
+                    const clearItems: ContextMenuItem[] = [
+                        {
+                            key: "clear-completed",
+                            label: "Clear completed",
+                            disabled: !hasCompletedFocusTask,
+                            onSelect: handleClearCompleted,
+                        },
+                        {
+                            key: "clear-all",
+                            label: "Clear all",
+                            disabled: focusTasks.length === 0,
+                            onSelect: handleClearAll,
+                        },
+                    ];
+                    const items: ContextMenuItem[] =
+                        menu.kind === "task"
+                            ? [
+                                  {
+                                      key: "remove-from-today",
+                                      label: "Remove from today",
+                                      onSelect: () =>
+                                          handleRemoveFromToday(menu.taskId),
+                                  },
+                                  {
+                                      key: "delete-task",
+                                      label: "Delete task",
+                                      danger: true,
+                                      onSelect: () =>
+                                          handleDeleteTask(menu.taskId),
+                                  },
+                                  ...clearItems,
+                              ]
+                            : clearItems;
+
+                    return (
+                        <ContextMenu
+                            x={menu.x}
+                            y={menu.y}
+                            items={items}
+                            onClose={closeMenu}
+                            boundaryRef={rootRef}
+                        />
+                    );
+                })()}
 
             {pendingDeleteTask &&
                 createPortal(
