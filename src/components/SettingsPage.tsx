@@ -414,6 +414,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
             value: string,
         ) {
             setAppearanceForm((f) => ({
+                ...f,
                 theme: "custom",
                 colors: { ...f.colors, [field]: value },
             }));
@@ -433,7 +434,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                           ? DARK_COLORS
                           : LIGHT_COLORS
                       : LIGHT_COLORS;
-            setAppearanceForm({ theme, colors });
+            setAppearanceForm((f) => ({ ...f, theme, colors }));
         }
 
         function resetAppearanceCategory(fields: (keyof AppearanceColors)[]) {
@@ -442,12 +443,17 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                 fields.forEach((field) => {
                     colors[field] = LIGHT_COLORS[field];
                 });
-                return { theme: "custom", colors };
+                return { ...f, theme: "custom", colors };
             });
         }
 
         function handleResetAllAppearance() {
-            setAppearanceForm({ theme: "system", colors: LIGHT_COLORS });
+            setAppearanceForm((f) => ({
+                ...f,
+                theme: "system",
+                colors: LIGHT_COLORS,
+                snapToGrid: DEFAULT_APPEARANCE.snapToGrid,
+            }));
             setAppearanceError(null);
         }
 
@@ -475,7 +481,8 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
 
         const isAppearanceAtDefaults =
             appearanceForm.theme === "system" &&
-            colorsEqual(appearanceForm.colors, LIGHT_COLORS);
+            colorsEqual(appearanceForm.colors, LIGHT_COLORS) &&
+            appearanceForm.snapToGrid === DEFAULT_APPEARANCE.snapToGrid;
 
         function updatePomodoroField<K extends keyof PomodoroFormState>(
             key: K,
@@ -1371,6 +1378,39 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                                                 )
                                             }
                                         />
+                                    </ColorCategoryCard>
+
+                                    <ColorCategoryCard
+                                        title="Board movement"
+                                        description="How widgets move when you drag or resize them on the board."
+                                        resetDisabled={
+                                            appearanceForm.snapToGrid ===
+                                            DEFAULT_APPEARANCE.snapToGrid
+                                        }
+                                        onReset={() =>
+                                            setAppearanceForm((f) => ({
+                                                ...f,
+                                                snapToGrid:
+                                                    DEFAULT_APPEARANCE.snapToGrid,
+                                            }))
+                                        }
+                                    >
+                                        <ToggleSwitch
+                                            checked={appearanceForm.snapToGrid}
+                                            onChange={(value) =>
+                                                setAppearanceForm((f) => ({
+                                                    ...f,
+                                                    snapToGrid: value,
+                                                }))
+                                            }
+                                            label="Snap to grid"
+                                        />
+                                        <p className="font-body text-xs text-ink-soft">
+                                            When on, widgets snap to an
+                                            invisible grid as you drag or
+                                            resize them, instead of moving
+                                            freely.
+                                        </p>
                                     </ColorCategoryCard>
 
                                     {appearanceError && (

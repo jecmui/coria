@@ -87,4 +87,6 @@ export interface AppearanceSettings {
     /** The user's custom color set. Only actually applied when `theme` is "custom" --
      *  Light/Dark/System always resolve to their built-in palettes instead. */
     colors: AppearanceColors;
+    /** When true, widgets snap to a grid on the board as they're dragged or resized. */
+    snapToGrid: boolean;
 }

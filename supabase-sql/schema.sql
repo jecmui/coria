@@ -272,3 +272,8 @@ alter table profiles
   drop column appearance_color_pin_timer,
   drop column appearance_color_pin_image,
   drop column appearance_color_pin_calendar;
+
+-- Board movement preference, edited from Settings > Appearance. When on, the
+-- board's Rnd widgets snap to the grid formed by the board-texture dots.
+alter table user_preferences
+  add column snap_to_grid boolean not null default false;

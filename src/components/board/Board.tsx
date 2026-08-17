@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Rnd } from "react-rnd";
 import { useBoardStore } from "../../store/boardStore";
+import { useAppearanceStore } from "../../store/appearanceStore";
 import { WidgetShell } from "./WidgetShell";
 import { TodoWidget } from "../widgets/TodoWidget";
 import { NoteWidget } from "../widgets/NoteWidget";
@@ -25,6 +26,19 @@ const WIDGET_MIN_HEIGHTS: Record<string, number> = {
     calendar: 160,
 };
 
+// Matches the board-texture dot spacing in index.css, so snapped widgets
+// line up with the visible dots.
+const GRID_SIZE = 22;
+
+// react-rnd's dragGrid/resizeGrid snap the *movement delta* from wherever a
+// widget currently sits, not its absolute position -- two widgets that start
+// on different offsets end up on different grids. Rounding the saved x/y/
+// width/height to true multiples of GRID_SIZE keeps every widget on one
+// shared grid regardless of where it started.
+function snapToGridValue(value: number) {
+    return Math.round(value / GRID_SIZE) * GRID_SIZE;
+}
+
 interface BoardProps {
     onOpenFullList: () => void;
     onOpenCalendar: () => void;
@@ -35,6 +49,7 @@ export function Board({ onOpenFullList, onOpenCalendar }: BoardProps) {
     const updateLayout = useBoardStore((s) => s.updateLayout);
     const removeWidget = useBoardStore((s) => s.removeWidget);
     const bringToFront = useBoardStore((s) => s.bringToFront);
+    const snapToGrid = useAppearanceStore((s) => s.settings.snapToGrid);
     const [isMobile, setIsMobile] = useState(() =>
         typeof window !== "undefined" ? window.innerWidth < 768 : false,
     );
@@ -49,6 +64,37 @@ export function Board({ onOpenFullList, onOpenCalendar }: BoardProps) {
 
         return () => mediaQuery.removeEventListener("change", handleChange);
     }, []);
+
+    // Turning snap-to-grid on realigns every existing widget to the shared
+    // grid once, so widgets placed before the setting was enabled (including
+    // the default starter layout) line up with each other immediately,
+    // instead of only aligning the next time each one is individually moved.
+    useEffect(() => {
+        if (!snapToGrid) return;
+        const { widgets: currentWidgets, updateLayout: setLayout } =
+            useBoardStore.getState();
+        currentWidgets.forEach((widget) => {
+            const aligned = {
+                x: snapToGridValue(widget.layout.x),
+                y: snapToGridValue(widget.layout.y),
+                width: Math.max(200, snapToGridValue(widget.layout.width)),
+                height: Math.max(
+                    WIDGET_MIN_HEIGHTS[widget.type],
+                    snapToGridValue(widget.layout.height),
+                ),
+            };
+            if (
+                aligned.x !== widget.layout.x ||
+                aligned.y !== widget.layout.y ||
+                aligned.width !== widget.layout.width ||
+                aligned.height !== widget.layout.height
+            ) {
+                setLayout(widget.id, aligned);
+            }
+        });
+        // Only re-run when the setting itself flips, not on every widget change.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [snapToGrid]);
 
     const renderWidgetContent = (
         widgetId: string,
@@ -114,20 +160,41 @@ export function Board({ onOpenFullList, onOpenCalendar }: BoardProps) {
                     position={{ x: widget.layout.x, y: widget.layout.y }}
                     minWidth={200}
                     minHeight={WIDGET_MIN_HEIGHTS[widget.type]}
+                    dragGrid={snapToGrid ? [GRID_SIZE, GRID_SIZE] : undefined}
+                    resizeGrid={
+                        snapToGrid ? [GRID_SIZE, GRID_SIZE] : undefined
+                    }
                     dragHandleClassName="widget-drag-handle"
                     style={{ zIndex: widget.zIndex }}
                     onDragStart={() => bringToFront(widget.id)}
                     onMouseDown={() => bringToFront(widget.id)}
                     onDragStop={(_, d) =>
-                        updateLayout(widget.id, { x: d.x, y: d.y })
-                    }
-                    onResizeStop={(_, __, ref, ___, position) =>
                         updateLayout(widget.id, {
-                            width: parseInt(ref.style.width, 10),
-                            height: parseInt(ref.style.height, 10),
-                            ...position,
+                            x: snapToGrid ? snapToGridValue(d.x) : d.x,
+                            y: snapToGrid ? snapToGridValue(d.y) : d.y,
                         })
                     }
+                    onResizeStop={(_, __, ref, ___, position) => {
+                        const width = parseInt(ref.style.width, 10);
+                        const height = parseInt(ref.style.height, 10);
+                        updateLayout(
+                            widget.id,
+                            snapToGrid
+                                ? {
+                                      width: Math.max(
+                                          200,
+                                          snapToGridValue(width),
+                                      ),
+                                      height: Math.max(
+                                          WIDGET_MIN_HEIGHTS[widget.type],
+                                          snapToGridValue(height),
+                                      ),
+                                      x: snapToGridValue(position.x),
+                                      y: snapToGridValue(position.y),
+                                  }
+                                : { width, height, ...position },
+                        );
+                    }}
                     bounds="parent"
                 >
                     <WidgetShell

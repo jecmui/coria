@@ -24,7 +24,7 @@ export const useAppearanceStore = create<AppearanceState>((set, get) => ({
         const { data, error } = await supabase
             .from("user_preferences")
             .select(
-                "theme, color_board, color_board_line, color_paper, color_paper_edge, color_ink, color_ink_soft, color_pin_todo, color_pin_note, color_pin_timer, color_pin_image, color_pin_calendar",
+                "theme, snap_to_grid, color_board, color_board_line, color_paper, color_paper_edge, color_ink, color_ink_soft, color_pin_todo, color_pin_note, color_pin_timer, color_pin_image, color_pin_calendar",
             )
             .eq("user_id", userId)
             .single();
@@ -53,6 +53,8 @@ export const useAppearanceStore = create<AppearanceState>((set, get) => ({
             settings: {
                 theme: (data.theme as ThemeMode) ?? DEFAULT_APPEARANCE.theme,
                 colors,
+                snapToGrid:
+                    data.snap_to_grid ?? DEFAULT_APPEARANCE.snapToGrid,
             },
             settingsLoading: false,
         });
@@ -66,6 +68,7 @@ export const useAppearanceStore = create<AppearanceState>((set, get) => ({
             .from("user_preferences")
             .update({
                 theme: settings.theme,
+                snap_to_grid: settings.snapToGrid,
                 color_board: settings.colors.board,
                 color_board_line: settings.colors.boardLine,
                 color_paper: settings.colors.paper,

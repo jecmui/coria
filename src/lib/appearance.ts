@@ -34,6 +34,7 @@ export const DARK_COLORS: AppearanceColors = {
 export const DEFAULT_APPEARANCE: AppearanceSettings = {
     theme: "system",
     colors: LIGHT_COLORS,
+    snapToGrid: false,
 };
 
 const CSS_VAR_BY_FIELD: Record<keyof AppearanceColors, string> = {
