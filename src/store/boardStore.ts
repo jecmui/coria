@@ -169,11 +169,11 @@ export const useBoardStore = create<BoardState>((set, get) => ({
     loadPomodoroSettings: async (userId) => {
         set({ pomodoroLoading: true, pomodoroError: null });
         const { data, error } = await supabase
-            .from("profiles")
+            .from("user_preferences")
             .select(
                 "focus_seconds, short_break_seconds, long_break_seconds, long_break_interval, auto_start_breaks, auto_start_focus",
             )
-            .eq("id", userId)
+            .eq("user_id", userId)
             .single();
 
         if (error) {

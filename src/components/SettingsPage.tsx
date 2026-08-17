@@ -745,7 +745,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
             const normalizedForm = normalizePomodoroForm(pomodoroForm);
             const settings = formToSettings(normalizedForm);
             const { error } = await supabase
-                .from("profiles")
+                .from("user_preferences")
                 .update({
                     focus_seconds: settings.focusSeconds,
                     short_break_seconds: settings.shortBreakSeconds,
@@ -754,7 +754,7 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                     auto_start_breaks: settings.autoStartBreaks,
                     auto_start_focus: settings.autoStartFocus,
                 })
-                .eq("id", user.id);
+                .eq("user_id", user.id);
 
             if (error) {
                 setPomodoroError(error.message);

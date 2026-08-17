@@ -22,11 +22,11 @@ export const useAppearanceStore = create<AppearanceState>((set, get) => ({
     load: async (userId) => {
         set({ userId, settingsLoading: true, settingsError: null });
         const { data, error } = await supabase
-            .from("profiles")
+            .from("user_preferences")
             .select(
-                "appearance_theme, appearance_color_board, appearance_color_board_line, appearance_color_paper, appearance_color_paper_edge, appearance_color_ink, appearance_color_ink_soft, appearance_color_pin_todo, appearance_color_pin_note, appearance_color_pin_timer, appearance_color_pin_image, appearance_color_pin_calendar",
+                "theme, color_board, color_board_line, color_paper, color_paper_edge, color_ink, color_ink_soft, color_pin_todo, color_pin_note, color_pin_timer, color_pin_image, color_pin_calendar",
             )
-            .eq("id", userId)
+            .eq("user_id", userId)
             .single();
 
         if (error) {
@@ -36,27 +36,22 @@ export const useAppearanceStore = create<AppearanceState>((set, get) => ({
         }
 
         const colors: AppearanceColors = {
-            board: data.appearance_color_board ?? LIGHT_COLORS.board,
-            boardLine:
-                data.appearance_color_board_line ?? LIGHT_COLORS.boardLine,
-            paper: data.appearance_color_paper ?? LIGHT_COLORS.paper,
-            paperEdge:
-                data.appearance_color_paper_edge ?? LIGHT_COLORS.paperEdge,
-            ink: data.appearance_color_ink ?? LIGHT_COLORS.ink,
-            inkSoft: data.appearance_color_ink_soft ?? LIGHT_COLORS.inkSoft,
-            pinTodo: data.appearance_color_pin_todo ?? LIGHT_COLORS.pinTodo,
-            pinNote: data.appearance_color_pin_note ?? LIGHT_COLORS.pinNote,
-            pinTimer: data.appearance_color_pin_timer ?? LIGHT_COLORS.pinTimer,
-            pinImage: data.appearance_color_pin_image ?? LIGHT_COLORS.pinImage,
-            pinCalendar:
-                data.appearance_color_pin_calendar ?? LIGHT_COLORS.pinCalendar,
+            board: data.color_board ?? LIGHT_COLORS.board,
+            boardLine: data.color_board_line ?? LIGHT_COLORS.boardLine,
+            paper: data.color_paper ?? LIGHT_COLORS.paper,
+            paperEdge: data.color_paper_edge ?? LIGHT_COLORS.paperEdge,
+            ink: data.color_ink ?? LIGHT_COLORS.ink,
+            inkSoft: data.color_ink_soft ?? LIGHT_COLORS.inkSoft,
+            pinTodo: data.color_pin_todo ?? LIGHT_COLORS.pinTodo,
+            pinNote: data.color_pin_note ?? LIGHT_COLORS.pinNote,
+            pinTimer: data.color_pin_timer ?? LIGHT_COLORS.pinTimer,
+            pinImage: data.color_pin_image ?? LIGHT_COLORS.pinImage,
+            pinCalendar: data.color_pin_calendar ?? LIGHT_COLORS.pinCalendar,
         };
 
         set({
             settings: {
-                theme:
-                    (data.appearance_theme as ThemeMode) ??
-                    DEFAULT_APPEARANCE.theme,
+                theme: (data.theme as ThemeMode) ?? DEFAULT_APPEARANCE.theme,
                 colors,
             },
             settingsLoading: false,
@@ -68,22 +63,22 @@ export const useAppearanceStore = create<AppearanceState>((set, get) => ({
         if (!userId) return false;
         set({ settingsError: null });
         const { error } = await supabase
-            .from("profiles")
+            .from("user_preferences")
             .update({
-                appearance_theme: settings.theme,
-                appearance_color_board: settings.colors.board,
-                appearance_color_board_line: settings.colors.boardLine,
-                appearance_color_paper: settings.colors.paper,
-                appearance_color_paper_edge: settings.colors.paperEdge,
-                appearance_color_ink: settings.colors.ink,
-                appearance_color_ink_soft: settings.colors.inkSoft,
-                appearance_color_pin_todo: settings.colors.pinTodo,
-                appearance_color_pin_note: settings.colors.pinNote,
-                appearance_color_pin_timer: settings.colors.pinTimer,
-                appearance_color_pin_image: settings.colors.pinImage,
-                appearance_color_pin_calendar: settings.colors.pinCalendar,
+                theme: settings.theme,
+                color_board: settings.colors.board,
+                color_board_line: settings.colors.boardLine,
+                color_paper: settings.colors.paper,
+                color_paper_edge: settings.colors.paperEdge,
+                color_ink: settings.colors.ink,
+                color_ink_soft: settings.colors.inkSoft,
+                color_pin_todo: settings.colors.pinTodo,
+                color_pin_note: settings.colors.pinNote,
+                color_pin_timer: settings.colors.pinTimer,
+                color_pin_image: settings.colors.pinImage,
+                color_pin_calendar: settings.colors.pinCalendar,
             })
-            .eq("id", userId);
+            .eq("user_id", userId);
 
         if (error) {
             set({ settingsError: error.message });

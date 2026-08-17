@@ -27,7 +27,11 @@ interface TaskState {
     tasks: Task[];
     userId: string | null;
     loading: boolean;
+    /** When false, "Delete task" skips its confirmation dialog. */
+    confirmTaskDelete: boolean;
     loadTasks: (userId: string) => Promise<void>;
+    loadConfirmTaskDelete: (userId: string) => Promise<void>;
+    setConfirmTaskDelete: (value: boolean) => void;
     clear: () => void;
     addTask: (title: string, focusToday?: boolean) => void;
     updateTask: (id: string, title: string) => void;
@@ -41,6 +45,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     tasks: [],
     userId: null,
     loading: false,
+    confirmTaskDelete: true,
 
     loadTasks: async (userId) => {
         set({ loading: true, userId });
@@ -57,7 +62,39 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         set({ tasks: (data as TaskRow[]).map(rowToTask), loading: false });
     },
 
-    clear: () => set({ tasks: [], userId: null }),
+    loadConfirmTaskDelete: async (userId) => {
+        const { data, error } = await supabase
+            .from("user_preferences")
+            .select("confirm_task_delete")
+            .eq("user_id", userId)
+            .single();
+
+        if (error) {
+            console.error("Failed to load task preferences:", error.message);
+            return;
+        }
+        set({ confirmTaskDelete: data.confirm_task_delete ?? true });
+    },
+
+    setConfirmTaskDelete: (value) => {
+        const { userId } = get();
+        set({ confirmTaskDelete: value });
+        if (!userId) return;
+
+        supabase
+            .from("user_preferences")
+            .update({ confirm_task_delete: value })
+            .eq("user_id", userId)
+            .then(({ error }) => {
+                if (error)
+                    console.error(
+                        "Failed to save task preferences:",
+                        error.message,
+                    );
+            });
+    },
+
+    clear: () => set({ tasks: [], userId: null, confirmTaskDelete: true }),
 
     addTask: (title, focusToday = false) => {
         const { userId, tasks } = get();

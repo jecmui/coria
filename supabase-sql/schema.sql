@@ -158,3 +158,117 @@ alter table profiles
   add column appearance_color_pin_timer text,
   add column appearance_color_pin_image text,
   add column appearance_color_pin_calendar text;
+
+-- User preferences: every editable setting now lives here instead of on
+-- `profiles`, which is back to being identity only (first_name). Column names
+-- drop the old `calendar_`/`appearance_` prefixes -- the table itself is the
+-- namespace now. Colors stay nullable and are only meaningful when
+-- theme = 'custom', same as before.
+create table user_preferences (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+
+  -- Pomodoro
+  focus_seconds integer not null default 1500,
+  short_break_seconds integer not null default 300,
+  long_break_seconds integer not null default 900,
+  long_break_interval integer not null default 4,
+  auto_start_breaks boolean not null default false,
+  auto_start_focus boolean not null default false,
+
+  -- Calendar
+  week_start smallint not null default 0,
+  date_format text not null default 'MM/DD/YYYY',
+  time_format text not null default '12h',
+  time_zone text,
+  default_event_duration integer not null default 60,
+
+  -- Appearance
+  theme text not null default 'light',
+  color_board text,
+  color_board_line text,
+  color_paper text,
+  color_paper_edge text,
+  color_ink text,
+  color_ink_soft text,
+  color_pin_todo text,
+  color_pin_note text,
+  color_pin_timer text,
+  color_pin_image text,
+  color_pin_calendar text,
+
+  -- Tasks: cleared by "Don't ask again" in the Today widget's delete confirmation.
+  confirm_task_delete boolean not null default true,
+
+  created_at timestamptz not null default now()
+);
+
+-- Backfill from the columns that used to live on `profiles`.
+insert into user_preferences (
+  user_id,
+  focus_seconds, short_break_seconds, long_break_seconds,
+  long_break_interval, auto_start_breaks, auto_start_focus,
+  week_start, date_format, time_format, time_zone, default_event_duration,
+  theme, color_board, color_board_line, color_paper, color_paper_edge,
+  color_ink, color_ink_soft, color_pin_todo, color_pin_note,
+  color_pin_timer, color_pin_image, color_pin_calendar
+)
+select
+  id,
+  focus_seconds, short_break_seconds, long_break_seconds,
+  long_break_interval, auto_start_breaks, auto_start_focus,
+  calendar_week_start, calendar_date_format, calendar_time_format,
+  calendar_time_zone, calendar_default_event_duration,
+  appearance_theme, appearance_color_board, appearance_color_board_line,
+  appearance_color_paper, appearance_color_paper_edge, appearance_color_ink,
+  appearance_color_ink_soft, appearance_color_pin_todo,
+  appearance_color_pin_note, appearance_color_pin_timer,
+  appearance_color_pin_image, appearance_color_pin_calendar
+from profiles
+on conflict (user_id) do nothing;
+
+alter table user_preferences enable row level security;
+
+create policy "Users manage own preferences"
+on user_preferences for all
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+-- New signups get a profile row and a preferences row (all defaults).
+create or replace function public.handle_new_user()
+returns trigger as $$
+begin
+  insert into public.profiles (id, first_name)
+  values (new.id, new.raw_user_meta_data->>'first_name');
+
+  insert into public.user_preferences (user_id)
+  values (new.id);
+
+  return new;
+end;
+$$ language plpgsql security definer;
+
+-- Preferences have moved -- `profiles` keeps only identity data.
+alter table profiles
+  drop column focus_seconds,
+  drop column short_break_seconds,
+  drop column long_break_seconds,
+  drop column long_break_interval,
+  drop column auto_start_breaks,
+  drop column auto_start_focus,
+  drop column calendar_week_start,
+  drop column calendar_date_format,
+  drop column calendar_time_format,
+  drop column calendar_time_zone,
+  drop column calendar_default_event_duration,
+  drop column appearance_theme,
+  drop column appearance_color_board,
+  drop column appearance_color_board_line,
+  drop column appearance_color_paper,
+  drop column appearance_color_paper_edge,
+  drop column appearance_color_ink,
+  drop column appearance_color_ink_soft,
+  drop column appearance_color_pin_todo,
+  drop column appearance_color_pin_note,
+  drop column appearance_color_pin_timer,
+  drop column appearance_color_pin_image,
+  drop column appearance_color_pin_calendar;

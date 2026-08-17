@@ -33,6 +33,7 @@ export default function App() {
     const settingsPageRef = useRef<SettingsPageHandle>(null);
 
     const loadTasks = useTaskStore((s) => s.loadTasks);
+    const loadConfirmTaskDelete = useTaskStore((s) => s.loadConfirmTaskDelete);
     const clearTasks = useTaskStore((s) => s.clear);
     const loadWidgets = useBoardStore((s) => s.loadWidgets);
     const loadPomodoroSettings = useBoardStore((s) => s.loadPomodoroSettings);
@@ -50,6 +51,7 @@ export default function App() {
     useEffect(() => {
         if (user) {
             loadTasks(user.id);
+            loadConfirmTaskDelete(user.id);
             loadWidgets(user.id);
             loadPomodoroSettings(user.id);
             loadCalendar(user.id);

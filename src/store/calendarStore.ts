@@ -64,11 +64,11 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
     load: async (userId) => {
         set({ userId, settingsLoading: true, settingsError: null });
         const { data, error } = await supabase
-            .from("profiles")
+            .from("user_preferences")
             .select(
-                "calendar_week_start, calendar_date_format, calendar_time_format, calendar_time_zone, calendar_default_event_duration",
+                "week_start, date_format, time_format, time_zone, default_event_duration",
             )
-            .eq("id", userId)
+            .eq("user_id", userId)
             .single();
 
         if (error) {
@@ -80,19 +80,14 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
         set({
             settings: {
                 weekStart:
-                    data.calendar_week_start ??
-                    DEFAULT_CALENDAR_SETTINGS.weekStart,
+                    data.week_start ?? DEFAULT_CALENDAR_SETTINGS.weekStart,
                 dateFormat:
-                    data.calendar_date_format ??
-                    DEFAULT_CALENDAR_SETTINGS.dateFormat,
+                    data.date_format ?? DEFAULT_CALENDAR_SETTINGS.dateFormat,
                 timeFormat:
-                    data.calendar_time_format ??
-                    DEFAULT_CALENDAR_SETTINGS.timeFormat,
-                timeZone:
-                    data.calendar_time_zone ??
-                    DEFAULT_CALENDAR_SETTINGS.timeZone,
+                    data.time_format ?? DEFAULT_CALENDAR_SETTINGS.timeFormat,
+                timeZone: data.time_zone ?? DEFAULT_CALENDAR_SETTINGS.timeZone,
                 defaultEventDuration:
-                    data.calendar_default_event_duration ??
+                    data.default_event_duration ??
                     DEFAULT_CALENDAR_SETTINGS.defaultEventDuration,
             },
             settingsLoading: false,
@@ -128,15 +123,15 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
         if (!userId) return false;
         set({ settingsError: null });
         const { error } = await supabase
-            .from("profiles")
+            .from("user_preferences")
             .update({
-                calendar_week_start: settings.weekStart,
-                calendar_date_format: settings.dateFormat,
-                calendar_time_format: settings.timeFormat,
-                calendar_time_zone: settings.timeZone,
-                calendar_default_event_duration: settings.defaultEventDuration,
+                week_start: settings.weekStart,
+                date_format: settings.dateFormat,
+                time_format: settings.timeFormat,
+                time_zone: settings.timeZone,
+                default_event_duration: settings.defaultEventDuration,
             })
-            .eq("id", userId);
+            .eq("user_id", userId);
 
         if (error) {
             set({ settingsError: error.message });
