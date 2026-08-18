@@ -328,3 +328,15 @@ alter table user_preferences
 alter table calendar_events
   add column dirty boolean not null default false,
   add column deleted_at timestamptz;
+
+-- Google returns each event's own authoring time zone (start.timeZone),
+-- which isn't always the calendar's default -- null for locally-created
+-- events, which are authored in the calendar's own time zone. starts_at/
+-- ends_at are already timezone-independent UTC instants, so this only
+-- matters for expanding a *recurring* event's RRULE: its wall-clock
+-- occurrences must be computed in the zone it was actually authored in
+-- (falling back to the calendar's time zone setting when this is null),
+-- not unconditionally in the calendar's -- otherwise a cross-timezone
+-- recurring series can drift by an hour during DST-mismatch weeks.
+alter table calendar_events
+  add column event_time_zone text;

@@ -9,10 +9,16 @@ import type {
 /** Fields a caller can create/update an event without specifying -- creation
  *  defaults them (see addEvent), and updates leave them untouched so editing
  *  an event through the local UI can't clobber a mirrored event's Google
- *  linkage. `dirty` is here for a different reason: it's entirely
- *  store-managed (every local create/edit/delete forces it true, regardless
- *  of what a caller passes), never something a caller should set itself. */
-type OptionalEventFields = "allDay" | "source" | "externalId" | "dirty";
+ *  linkage. `dirty` and `eventTimeZone` are here for a different reason:
+ *  they're entirely store-managed (every local create/edit forces them to a
+ *  specific value, regardless of what a caller passes), never something a
+ *  caller should set itself. */
+type OptionalEventFields =
+    | "allDay"
+    | "source"
+    | "externalId"
+    | "dirty"
+    | "eventTimeZone";
 
 export const DEFAULT_CALENDAR_SETTINGS: CalendarSettings = {
     weekStart: 0,
@@ -34,10 +40,11 @@ interface CalendarEventRow {
     external_id: string | null;
     recurrence_rule: string | null;
     dirty: boolean;
+    event_time_zone: string | null;
 }
 
 const EVENT_COLUMNS =
-    "id, title, description, location, starts_at, ends_at, all_day, source, external_id, recurrence_rule, dirty";
+    "id, title, description, location, starts_at, ends_at, all_day, source, external_id, recurrence_rule, dirty, event_time_zone";
 
 interface CalendarState {
     userId: string | null;
@@ -76,6 +83,7 @@ function rowToEvent(row: CalendarEventRow): CalendarEvent {
         externalId: row.external_id,
         recurrenceRule: row.recurrence_rule,
         dirty: row.dirty,
+        eventTimeZone: row.event_time_zone,
     };
 }
 
@@ -215,6 +223,10 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
                 // A freshly created event has never been pushed anywhere,
                 // regardless of what (if anything) the caller passed.
                 dirty: true,
+                // null (the local UI's implicit "authored in the calendar's
+                // own time zone") unless a caller explicitly provides
+                // Google's own per-event time zone -- see expandRecurringEvents.
+                event_time_zone: event.eventTimeZone ?? null,
             })
             .select(EVENT_COLUMNS)
             .single();
@@ -236,9 +248,15 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
         // allDay/source/externalId are only included when the caller actually
         // provides them, so editing an event through the local UI (which
         // doesn't know about them) can't clobber a mirrored event's Google
-        // linkage back to its defaults. dirty is the opposite: it's always
-        // forced true here, regardless of what (if anything) the caller
-        // passed -- any local edit means this event needs to be pushed.
+        // linkage back to its defaults. dirty and eventTimeZone are the
+        // opposite: they're always forced here, regardless of what (if
+        // anything) the caller passed. dirty is always true -- any local
+        // edit means this event needs to be pushed. eventTimeZone defaults
+        // to null (falls back to the calendar's own time zone) unless the
+        // caller explicitly provides Google's own per-event time zone --
+        // a *local* edit re-authors recurrenceRule using the calendar's
+        // time zone, so any previously-stored Google time zone would be
+        // stale and must be cleared, not just left alone.
         const { error } = await supabase
             .from("calendar_events")
             .update({
@@ -249,6 +267,7 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
                 ends_at: event.endsAt,
                 recurrence_rule: event.recurrenceRule,
                 dirty: true,
+                event_time_zone: event.eventTimeZone ?? null,
                 ...(event.allDay !== undefined && { all_day: event.allDay }),
                 ...(event.source !== undefined && { source: event.source }),
                 ...(event.externalId !== undefined && {
@@ -263,7 +282,14 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
         set((state) => ({
             events: state.events
                 .map((item) =>
-                    item.id === id ? { ...item, ...event, dirty: true } : item,
+                    item.id === id
+                        ? {
+                              ...item,
+                              ...event,
+                              dirty: true,
+                              eventTimeZone: event.eventTimeZone ?? null,
+                          }
+                        : item,
                 )
                 .sort((a, b) => a.startsAt.localeCompare(b.startsAt)),
         }));

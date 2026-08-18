@@ -668,7 +668,16 @@ export function buildRecurrenceRule(
  *  visible occurrences of the same series don't collide as React keys) and
  *  an `instanceOf` pointing back to the master's real id (so edit/delete
  *  can resolve back to the whole series). A malformed recurrenceRule is
- *  logged and skipped rather than crashing the render. */
+ *  logged and skipped rather than crashing the render.
+ *
+ *  `timeZone` is only a *fallback* -- each event's own eventTimeZone (set
+ *  for events synced from Google, which carries its own per-event time
+ *  zone that isn't always the calendar's default) takes priority when
+ *  expanding its recurrenceRule, since a recurring series' wall-clock
+ *  occurrences have to be computed in whichever zone it was actually
+ *  authored in or a cross-timezone series can drift by an hour during
+ *  DST-mismatch weeks. Non-recurring events don't need this at all --
+ *  startsAt/endsAt are already timezone-independent UTC instants. */
 export function expandRecurringEvents(
     events: CalendarEvent[],
     rangeStart: Date,
@@ -686,6 +695,7 @@ export function expandRecurringEvents(
             continue;
         }
 
+        const eventTimeZone = event.eventTimeZone ?? timeZone;
         const durationMs = end.getTime() - start.getTime();
         // An occurrence starting just before rangeStart can still overlap
         // it once its own duration is accounted for.
@@ -696,11 +706,11 @@ export function expandRecurringEvents(
             const parsedOptions = RRule.parseString(event.recurrenceRule);
             const rule = new RRule({
                 ...parsedOptions,
-                dtstart: toFloatingUtc(start, timeZone),
+                dtstart: toFloatingUtc(start, eventTimeZone),
             } as Partial<RRuleOptions>);
             occurrences = rule.between(
-                toFloatingUtc(queryFrom, timeZone),
-                toFloatingUtc(rangeEnd, timeZone),
+                toFloatingUtc(queryFrom, eventTimeZone),
+                toFloatingUtc(rangeEnd, eventTimeZone),
                 true,
             );
         } catch (error) {
@@ -713,7 +723,7 @@ export function expandRecurringEvents(
         }
 
         for (const occurrence of occurrences) {
-            const occStartIso = fromFloatingUtc(occurrence, timeZone);
+            const occStartIso = fromFloatingUtc(occurrence, eventTimeZone);
             const occStart = new Date(occStartIso);
             const occEnd = new Date(occStart.getTime() + durationMs);
             if (occStart >= rangeEnd || occEnd <= rangeStart) continue;

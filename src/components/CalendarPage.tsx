@@ -362,10 +362,14 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
             endDate: dateInputValue(new Date(event.endsAt), settings.timeZone),
             endTime: timeInputValue(new Date(event.endsAt), settings.timeZone),
             allDay: event.allDay,
+            // The rule's weekday/nth were derived from whichever time zone
+            // the event was actually authored in (Google's per-event zone
+            // when it has one), not necessarily the calendar's own -- same
+            // reasoning as expandRecurringEvents.
             ...repeatStateFromRule(
                 event.recurrenceRule,
                 event.startsAt,
-                settings.timeZone,
+                event.eventTimeZone ?? settings.timeZone,
             ),
         });
     }
