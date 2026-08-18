@@ -18,6 +18,11 @@ export interface CalendarEvent {
     /** RFC 5545 RRULE value (no DTSTART -- startsAt is the anchor), or null
      *  for a non-recurring event. */
     recurrenceRule: string | null;
+    /** Two-way sync groundwork: true when this event's local state hasn't
+     *  been pushed to its external provider yet (set on every local
+     *  create/edit/delete). Always true for a purely local event with no
+     *  provider to sync to. */
+    dirty: boolean;
     /** Set only on occurrences synthesized by expandRecurringEvents -- holds
      *  the master row's real id, so edit/delete route back to the whole
      *  series instead of this one occurrence's synthetic id. Absent on

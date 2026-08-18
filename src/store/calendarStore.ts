@@ -9,8 +9,10 @@ import type {
 /** Fields a caller can create/update an event without specifying -- creation
  *  defaults them (see addEvent), and updates leave them untouched so editing
  *  an event through the local UI can't clobber a mirrored event's Google
- *  linkage. */
-type OptionalEventFields = "allDay" | "source" | "externalId";
+ *  linkage. `dirty` is here for a different reason: it's entirely
+ *  store-managed (every local create/edit/delete forces it true, regardless
+ *  of what a caller passes), never something a caller should set itself. */
+type OptionalEventFields = "allDay" | "source" | "externalId" | "dirty";
 
 export const DEFAULT_CALENDAR_SETTINGS: CalendarSettings = {
     weekStart: 0,
@@ -31,10 +33,11 @@ interface CalendarEventRow {
     source: string;
     external_id: string | null;
     recurrence_rule: string | null;
+    dirty: boolean;
 }
 
 const EVENT_COLUMNS =
-    "id, title, description, location, starts_at, ends_at, all_day, source, external_id, recurrence_rule";
+    "id, title, description, location, starts_at, ends_at, all_day, source, external_id, recurrence_rule, dirty";
 
 interface CalendarState {
     userId: string | null;
@@ -72,6 +75,7 @@ function rowToEvent(row: CalendarEventRow): CalendarEvent {
         source: row.source as CalendarEventSource,
         externalId: row.external_id,
         recurrenceRule: row.recurrence_rule,
+        dirty: row.dirty,
     };
 }
 
@@ -129,17 +133,23 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
         // fall inside it -- so recurring rows are fetched by starts_at
         // alone, with no upper-bound on how long ago they began and no
         // lower-bound from ends_at at all.
+        // Both queries exclude tombstoned (soft-deleted) rows -- deleted_at
+        // is set instead of hard-deleting so a future sync can still push
+        // the deletion to the external provider, but they should never
+        // appear in the app itself, same as if they were actually gone.
         const [plain, recurring] = await Promise.all([
             supabase
                 .from("calendar_events")
                 .select(EVENT_COLUMNS)
                 .is("recurrence_rule", null)
+                .is("deleted_at", null)
                 .lt("starts_at", end)
                 .gt("ends_at", start),
             supabase
                 .from("calendar_events")
                 .select(EVENT_COLUMNS)
                 .not("recurrence_rule", "is", null)
+                .is("deleted_at", null)
                 .lt("starts_at", end),
         ]);
 
@@ -202,6 +212,9 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
                 source: event.source ?? "local",
                 external_id: event.externalId ?? null,
                 recurrence_rule: event.recurrenceRule,
+                // A freshly created event has never been pushed anywhere,
+                // regardless of what (if anything) the caller passed.
+                dirty: true,
             })
             .select(EVENT_COLUMNS)
             .single();
@@ -223,7 +236,9 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
         // allDay/source/externalId are only included when the caller actually
         // provides them, so editing an event through the local UI (which
         // doesn't know about them) can't clobber a mirrored event's Google
-        // linkage back to its defaults.
+        // linkage back to its defaults. dirty is the opposite: it's always
+        // forced true here, regardless of what (if anything) the caller
+        // passed -- any local edit means this event needs to be pushed.
         const { error } = await supabase
             .from("calendar_events")
             .update({
@@ -233,6 +248,7 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
                 starts_at: event.startsAt,
                 ends_at: event.endsAt,
                 recurrence_rule: event.recurrenceRule,
+                dirty: true,
                 ...(event.allDay !== undefined && { all_day: event.allDay }),
                 ...(event.source !== undefined && { source: event.source }),
                 ...(event.externalId !== undefined && {
@@ -246,16 +262,23 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
         }
         set((state) => ({
             events: state.events
-                .map((item) => (item.id === id ? { ...item, ...event } : item))
+                .map((item) =>
+                    item.id === id ? { ...item, ...event, dirty: true } : item,
+                )
                 .sort((a, b) => a.startsAt.localeCompare(b.startsAt)),
         }));
         return true;
     },
 
     removeEvent: async (id) => {
+        // Soft delete: sets a tombstone instead of removing the row, so a
+        // future sync can still push the deletion to the external provider
+        // before the row is actually purged. loadEvents already excludes
+        // deleted_at rows, and this optimistically drops it from local
+        // state too, so it disappears from the UI immediately either way.
         const { error } = await supabase
             .from("calendar_events")
-            .delete()
+            .update({ deleted_at: new Date().toISOString(), dirty: true })
             .eq("id", id);
         if (error) {
             console.error("Failed to delete calendar event:", error.message);

@@ -316,3 +316,15 @@ alter table calendar_events
 -- of leaving done tasks wherever they were in the list.
 alter table user_preferences
   add column today_sort_completed_to_bottom boolean not null default false;
+
+-- Two-way sync groundwork. `dirty` marks a row whose local state hasn't
+-- been pushed to its external provider yet -- set on every local
+-- create/edit/delete, meant to be cleared once a future sync successfully
+-- pushes it. `deleted_at` is a tombstone for local deletes: the row is
+-- soft-deleted (excluded from every query the app runs, same as if it were
+-- gone) rather than hard-deleted, so a future sync can still see it existed
+-- and push the deletion to the external provider before the row is
+-- actually purged.
+alter table calendar_events
+  add column dirty boolean not null default false,
+  add column deleted_at timestamptz;
