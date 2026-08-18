@@ -247,12 +247,16 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         const { userId, tasks } = get();
         if (!userId) return;
 
-        // New focus-today tasks land at the end of the Today widget's list.
+        // New focus-today tasks land at the top of the Today widget's list --
+        // one below the current lowest sortOrder (negative values are fine,
+        // only relative order matters).
+        const focusSortOrders = tasks
+            .filter((t) => t.focusToday)
+            .map((t) => t.sortOrder);
         const nextSortOrder = focusToday
-            ? Math.max(
-                  0,
-                  ...tasks.filter((t) => t.focusToday).map((t) => t.sortOrder),
-              ) + 1
+            ? focusSortOrders.length
+                ? Math.min(...focusSortOrders) - 1
+                : 0
             : 0;
 
         // Optimistic: show the task immediately with a temp id, then reconcile
@@ -350,13 +354,16 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         const task = tasks.find((t) => t.id === id);
         if (!task) return;
         const next = !task.focusToday;
-        // Turning focus on drops the task at the end of the Today widget's list;
-        // turning it off leaves sortOrder as-is, it's unused until re-starred.
+        // Turning focus on drops the task at the top of the Today widget's
+        // list, same as addTask; turning it off leaves sortOrder as-is, it's
+        // unused until re-starred.
+        const focusSortOrders = tasks
+            .filter((t) => t.focusToday)
+            .map((t) => t.sortOrder);
         const nextSortOrder = next
-            ? Math.max(
-                  0,
-                  ...tasks.filter((t) => t.focusToday).map((t) => t.sortOrder),
-              ) + 1
+            ? focusSortOrders.length
+                ? Math.min(...focusSortOrders) - 1
+                : 0
             : task.sortOrder;
         set((state) => ({
             tasks: state.tasks.map((t) =>
