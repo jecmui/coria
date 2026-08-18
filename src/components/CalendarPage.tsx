@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { RRule, Weekday } from "rrule";
 import { useCalendarStore } from "../store/calendarStore";
 import type { CalendarEvent, CalendarSettings } from "../types/calendar";
@@ -18,7 +18,6 @@ import {
     dateInputValue,
     expandRecurringEvents,
     eventOverlapsDay,
-    eventTopAndHeight,
     floatingUtcToDateValue,
     formatDayName,
     formatHour,
@@ -27,6 +26,7 @@ import {
     getWeekStart,
     inputValuesToUtcIso,
     layoutAllDayEvents,
+    layoutTimedEventsForDay,
     ordinalWeekdayOfMonth,
     sameCalendarDay,
     timeInputValue,
@@ -268,6 +268,15 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [draft, setDraft] = useState<EventDraft | null>(null);
     const [allDayExpanded, setAllDayExpanded] = useState(false);
+    const scrollContainerRef = useRef<HTMLDivElement>(null);
+    // Ticks the current-time indicator line -- 30s is frequent enough to
+    // read as "live" without re-rendering every second for a line that's
+    // only ever positioned to the nearest minute anyway.
+    const [now, setNow] = useState(() => new Date());
+    useEffect(() => {
+        const interval = setInterval(() => setNow(new Date()), 30_000);
+        return () => clearInterval(interval);
+    }, []);
 
     const weekStart = useMemo(
         () => getWeekStart(currentDate, settings.weekStart),
@@ -485,6 +494,31 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
             .map((day) => day.controlTop + ALL_DAY_BAR_HEIGHT),
     );
 
+    // Vertical position (px) of the current-time indicator line, shared by
+    // the line itself and the initial scroll-centering below -- updates as
+    // `now` ticks, same HOUR_HEIGHT-based math as timed events use.
+    const [nowHour, nowMinute] = timeInputValue(now, settings.timeZone)
+        .split(":")
+        .map(Number);
+    const nowTop = (nowHour * 60 + nowMinute) * (HOUR_HEIGHT / 60);
+
+    // Centers the grid on the current time once, on mount -- not on every
+    // render, so navigating weeks or an all-day event changing
+    // headerRowHeight doesn't keep yanking the user's scroll position back.
+    // The header row is sticky (stays pinned at the viewport's top once
+    // scrolled), so it visually covers whatever grid content would
+    // otherwise be at that same scroll position -- centering has to target
+    // the middle of the space *below* it, not the container's full height.
+    useLayoutEffect(() => {
+        const container = scrollContainerRef.current;
+        if (!container) return;
+        container.scrollTop = Math.max(
+            0,
+            nowTop - (container.clientHeight - headerRowHeight) / 2,
+        );
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     return (
         <div className="flex h-full w-full flex-col bg-board px-3 py-4 font-body text-ink sm:px-5 sm:py-5">
             <div className="mx-auto flex h-full w-full max-w-7xl flex-col overflow-hidden rounded-3xl border border-paper-edge bg-paper/95 shadow-[0_16px_48px_rgba(0,0,0,0.2)]">
@@ -574,7 +608,10 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                     </button>
                 </div>
 
-                <div className="min-h-0 flex-1 overflow-auto">
+                <div
+                    ref={scrollContainerRef}
+                    className="min-h-0 flex-1 overflow-auto"
+                >
                     {/* A single header row -- no extra grid row for all-day events.
                         Each day cell (and the gutter) reserves extra height via
                         min-height when there are all-day bars to show, so they stay
@@ -718,67 +755,94 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                             }}
                                         />
                                     ))}
-                                    {dayEvents.map((event) => {
-                                        const segment = eventTopAndHeight(
-                                            event.startsAt,
-                                            event.endsAt,
-                                            day,
-                                            settings.timeZone,
-                                        );
-                                        if (!segment) return null;
-                                        const {
+                                    {layoutTimedEventsForDay(
+                                        dayEvents,
+                                        day,
+                                        settings.timeZone,
+                                    ).map(
+                                        ({
+                                            event,
                                             top,
                                             height,
                                             continuesFromPrevDay,
                                             continuesToNextDay,
-                                        } = segment;
-                                        const showDetails =
-                                            height >= HOUR_HEIGHT &&
-                                            !continuesFromPrevDay;
-                                        return (
-                                            <button
-                                                key={event.id}
-                                                type="button"
-                                                onMouseDown={(mouseEvent) =>
-                                                    mouseEvent.stopPropagation()
-                                                }
-                                                onClick={(mouseEvent) => {
-                                                    mouseEvent.stopPropagation();
-                                                    editEvent(event);
-                                                }}
-                                                className={`absolute left-1 right-1 flex flex-col items-start justify-start overflow-hidden border border-pin-todo/40 bg-pin-todo/70 px-2 py-1 text-left text-xs text-ink shadow-sm hover:cursor-pointer hover:bg-pin-todo/8 ${
-                                                    continuesFromPrevDay
-                                                        ? ""
-                                                        : "rounded-t-md"
-                                                } ${
-                                                    continuesToNextDay
-                                                        ? ""
-                                                        : "rounded-b-md"
-                                                }`}
-                                                style={{ top, height }}
-                                            >
-                                                <p className="w-full truncate font-semibold">
-                                                    {continuesFromPrevDay
-                                                        ? "‹ "
-                                                        : ""}
-                                                    {event.title}
-                                                </p>
-                                                {showDetails && (
-                                                    <p className="mt-0.5 w-full whitespace-normal wrap-break-word text-[10px] leading-tight">
-                                                        {formatTime(
-                                                            new Date(
-                                                                event.startsAt,
-                                                            ),
-                                                            settings,
-                                                        )}
-                                                        {event.location
-                                                            ? ` · ${event.location}`
+                                            left,
+                                            width,
+                                            zIndex,
+                                            coveredByLaterEvent,
+                                        }) => {
+                                            const showDetails =
+                                                height >= HOUR_HEIGHT &&
+                                                !continuesFromPrevDay &&
+                                                !coveredByLaterEvent;
+                                            return (
+                                                <button
+                                                    key={event.id}
+                                                    type="button"
+                                                    onMouseDown={(
+                                                        mouseEvent,
+                                                    ) =>
+                                                        mouseEvent.stopPropagation()
+                                                    }
+                                                    onClick={(
+                                                        mouseEvent,
+                                                    ) => {
+                                                        mouseEvent.stopPropagation();
+                                                        editEvent(event);
+                                                    }}
+                                                    className={`absolute flex flex-col items-start justify-start overflow-hidden border border-pin-todo/40 bg-pin-todo/70 px-2 py-1 text-left text-xs text-ink shadow-sm hover:cursor-pointer hover:bg-pin-todo/8 ${
+                                                        continuesFromPrevDay
+                                                            ? ""
+                                                            : "rounded-t-md"
+                                                    } ${
+                                                        continuesToNextDay
+                                                            ? ""
+                                                            : "rounded-b-md"
+                                                    }`}
+                                                    style={{
+                                                        top,
+                                                        height,
+                                                        left,
+                                                        width,
+                                                        zIndex,
+                                                    }}
+                                                >
+                                                    <p className="w-full truncate font-semibold">
+                                                        {continuesFromPrevDay
+                                                            ? "‹ "
                                                             : ""}
+                                                        {event.title}
                                                     </p>
-                                                )}
-                                            </button>
-                                        );
-                                    })}
+                                                    {showDetails && (
+                                                        <p className="mt-0.5 w-full whitespace-normal wrap-break-word text-[10px] leading-tight">
+                                                            {formatTime(
+                                                                new Date(
+                                                                    event.startsAt,
+                                                                ),
+                                                                settings,
+                                                            )}
+                                                            {event.location
+                                                                ? ` · ${event.location}`
+                                                                : ""}
+                                                        </p>
+                                                    )}
+                                                </button>
+                                            );
+                                        },
+                                    )}
+                                    {sameCalendarDay(
+                                        day,
+                                        now,
+                                        settings.timeZone,
+                                    ) && (
+                                        <div
+                                            className="pointer-events-none absolute inset-x-0 z-30 flex items-center"
+                                            style={{ top: nowTop }}
+                                        >
+                                            <span className="-ml-1 h-2 w-2 shrink-0 rounded-full bg-pin-timer" />
+                                            <span className="h-px flex-1 bg-pin-timer" />
+                                        </div>
+                                    )}
                                 </div>
                             );
                         })}

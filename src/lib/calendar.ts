@@ -185,6 +185,156 @@ export function eventTopAndHeight(
     return { top, height, continuesFromPrevDay, continuesToNextDay };
 }
 
+/** Events starting within this many minutes of each other split the day
+ *  column's width evenly, side by side, rather than cascading. */
+const SAME_SLOT_WINDOW_MINUTES = 20;
+/** How far each subsequent overlapping band is pushed in from the left, as
+ *  a fraction of the day column's width -- a later band renders on top of
+ *  (higher z-index than) earlier ones, so the earlier band's left sliver
+ *  stays visible as a cascade instead of being fully covered. */
+const BAND_INDENT_FRACTION = 0.16;
+/** Caps how far indentation can push in, so a band deep in a cascade still
+ *  keeps a usable minimum width instead of being squeezed to nothing. */
+const MAX_BAND_INDENT_FRACTION = 0.64;
+
+export interface TimedEventLayoutItem extends EventDaySegment {
+    event: CalendarEvent;
+    /** CSS calc() expression, relative to the day column's own width. */
+    left: string;
+    width: string;
+    zIndex: number;
+    /** True when a later (higher z-index) band's event time-overlaps this
+     *  one, meaning it's cascaded on top and would cover this event's own
+     *  time/location text -- callers should hide that text rather than let
+     *  it render underneath the covering event. */
+    coveredByLaterEvent: boolean;
+}
+
+interface TimedEventSegment extends EventDaySegment {
+    event: CalendarEvent;
+    startMinutes: number;
+    endMinutes: number;
+}
+
+/** Lays out one day's timed events: events starting at the same time or
+ *  within SAME_SLOT_WINDOW_MINUTES of each other split the column's width
+ *  evenly (a "band"); a later band that still overlaps an earlier one in
+ *  time -- just not close enough in start time to share its band -- cascades
+ *  instead, indented from the left and layered on top of it. Events with no
+ *  overlap at all each get the column's full width, as before. */
+export function layoutTimedEventsForDay(
+    events: CalendarEvent[],
+    day: Date,
+    timeZone: string,
+): TimedEventLayoutItem[] {
+    const segments: TimedEventSegment[] = events
+        .map((event) => {
+            const segment = eventTopAndHeight(
+                event.startsAt,
+                event.endsAt,
+                day,
+                timeZone,
+            );
+            if (!segment) return null;
+            // Segment top/height are already clipped to this day's
+            // [00:00, 24:00) -- converting back to minutes here means
+            // grouping is based on each event's *visible* start/end within
+            // this specific day, not a real start on an earlier day.
+            const startMinutes = segment.top / (HOUR_HEIGHT / 60);
+            const endMinutes =
+                startMinutes + segment.height / (HOUR_HEIGHT / 60);
+            return { event, startMinutes, endMinutes, ...segment };
+        })
+        .filter((item): item is TimedEventSegment => item !== null)
+        .sort(
+            (a, b) =>
+                a.startMinutes - b.startMinutes ||
+                a.endMinutes - b.endMinutes,
+        );
+
+    const result: TimedEventLayoutItem[] = [];
+    let clusterStart = 0;
+    let clusterMaxEnd = segments[0]?.endMinutes ?? 0;
+
+    // Connected-component clustering by time overlap: a run of mutually
+    // touching events gets laid out together as one cascade; a gap with no
+    // overlap closes the cluster and starts a fresh one at full width.
+    for (let i = 1; i <= segments.length; i++) {
+        const next = segments[i];
+        if (next && next.startMinutes < clusterMaxEnd) {
+            clusterMaxEnd = Math.max(clusterMaxEnd, next.endMinutes);
+            continue;
+        }
+        layoutTimedEventCluster(segments.slice(clusterStart, i), result);
+        if (next) {
+            clusterStart = i;
+            clusterMaxEnd = next.endMinutes;
+        }
+    }
+
+    return result;
+}
+
+function layoutTimedEventCluster(
+    cluster: TimedEventSegment[],
+    result: TimedEventLayoutItem[],
+) {
+    // Sub-groups the cluster into "bands" of events that all start within
+    // SAME_SLOT_WINDOW_MINUTES of the band's own first (earliest) event --
+    // anchored to the band's start rather than chained event-to-event, so a
+    // band can't drift arbitrarily wide through a long run of events each
+    // just barely within the window of the previous one.
+    const bands: TimedEventSegment[][] = [];
+    for (const segment of cluster) {
+        const band = bands[bands.length - 1];
+        const anchorStart = band?.[0].startMinutes;
+        if (
+            band &&
+            anchorStart !== undefined &&
+            segment.startMinutes - anchorStart <= SAME_SLOT_WINDOW_MINUTES
+        ) {
+            band.push(segment);
+        } else {
+            bands.push([segment]);
+        }
+    }
+
+    bands.forEach((band, bandIndex) => {
+        const indent = Math.min(
+            bandIndex * BAND_INDENT_FRACTION,
+            MAX_BAND_INDENT_FRACTION,
+        );
+        const slotFraction = (1 - indent) / band.length;
+        // A later band's event only actually covers this one -- and so
+        // should hide its time/location -- if their time ranges genuinely
+        // overlap; being in the same cluster doesn't guarantee that (a
+        // cluster can chain together several bands where only adjacent
+        // ones truly overlap).
+        const laterBands = bands.slice(bandIndex + 1);
+        band.forEach((segment, slotIndex) => {
+            const leftFraction = indent + slotIndex * slotFraction;
+            const coveredByLaterEvent = laterBands.some((laterBand) =>
+                laterBand.some(
+                    (later) =>
+                        segment.startMinutes < later.endMinutes &&
+                        later.startMinutes < segment.endMinutes,
+                ),
+            );
+            result.push({
+                event: segment.event,
+                top: segment.top,
+                height: segment.height,
+                continuesFromPrevDay: segment.continuesFromPrevDay,
+                continuesToNextDay: segment.continuesToNextDay,
+                left: `calc(4px + (100% - 8px) * ${leftFraction} + 1px)`,
+                width: `calc((100% - 8px) * ${slotFraction} - 2px)`,
+                zIndex: 10 + bandIndex,
+                coveredByLaterEvent,
+            });
+        });
+    });
+}
+
 export function dateInputValue(date: Date, timeZone: string) {
     const parts = new Intl.DateTimeFormat("en-US", {
         timeZone,
