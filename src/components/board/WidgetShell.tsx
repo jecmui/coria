@@ -16,6 +16,11 @@ interface WidgetShellProps {
     mobile?: boolean;
     /** Grab handle for reordering in the mobile stacked view; ignored on desktop. */
     dragHandleProps?: HTMLAttributes<HTMLSpanElement>;
+    /** Extra controls rendered in the title bar, to the left of the remove
+     *  button -- e.g. the Calendar widget's "Today" jump-back control. Unlike
+     *  the remove button, these stay visible without hovering, since they're
+     *  functional state (not just widget chrome) the user needs to notice. */
+    headerActions?: ReactNode;
     children: ReactNode;
 }
 
@@ -25,6 +30,7 @@ export function WidgetShell({
     onRemove,
     mobile = false,
     dragHandleProps,
+    headerActions,
     children,
 }: WidgetShellProps) {
     return (
@@ -40,13 +46,16 @@ export function WidgetShell({
                         <span className="font-display text-[13px] font-semibold uppercase tracking-wide text-ink-soft">
                             {title}
                         </span>
-                        <button
-                            onClick={onRemove}
-                            className="rounded px-1.5 text-ink-soft opacity-0 transition hover:bg-black/5 hover:text-ink group-hover:opacity-100"
-                            aria-label={`Remove ${title} widget`}
-                        >
-                            ×
-                        </button>
+                        <div className="flex items-center gap-1">
+                            {headerActions}
+                            <button
+                                onClick={onRemove}
+                                className="rounded px-1.5 text-ink-soft opacity-0 transition hover:bg-black/5 hover:text-ink group-hover:opacity-100"
+                                aria-label={`Remove ${title} widget`}
+                            >
+                                ×
+                            </button>
+                        </div>
                     </div>
                 </>
             )}
@@ -71,13 +80,16 @@ export function WidgetShell({
                             {title}
                         </span>
                     </div>
-                    <button
-                        onClick={onRemove}
-                        className="rounded px-1.5 text-ink-soft transition hover:bg-black/5 hover:text-ink"
-                        aria-label={`Remove ${title} widget`}
-                    >
-                        ×
-                    </button>
+                    <div className="flex items-center gap-1">
+                        {headerActions}
+                        <button
+                            onClick={onRemove}
+                            className="rounded px-1.5 text-ink-soft transition hover:bg-black/5 hover:text-ink"
+                            aria-label={`Remove ${title} widget`}
+                        >
+                            ×
+                        </button>
+                    </div>
                 </div>
             )}
             <div className="min-h-0 flex-1 px-4 pb-4 scrollbar-gutter-stable">

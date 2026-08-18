@@ -1,7 +1,7 @@
-import type { CalendarSettings } from "../types/calendar";
+import type { CalendarEvent, CalendarSettings } from "../types/calendar";
 
 export const HOUR_HEIGHT = 56;
-export const DAY_COLUMN_MIN_WIDTH = 200;
+export const DAY_COLUMN_MIN_WIDTH = 180;
 
 export function startOfDay(date: Date) {
     const result = new Date(date);
@@ -215,4 +215,176 @@ export function inputValuesToUtcIso(
     const [hour, minute] = timeValue.split(":").map(Number);
     const wall = new Date(year, month - 1, day, hour, minute, 0, 0);
     return localWallTimeToUtcIso(wall, timeZone);
+}
+
+/** Adds `days` to a "YYYY-MM-DD" value using pure calendar-date arithmetic
+ *  (anchored to UTC internally), so it can't drift a day from the caller's
+ *  timeZone the way mixing this with a locale-aware Date would. */
+export function addDaysToDateValue(dateValue: string, days: number): string {
+    const [year, month, day] = dateValue.split("-").map(Number);
+    const date = new Date(Date.UTC(year, month - 1, day + days));
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(
+        date.getUTCDate(),
+    ).padStart(2, "0")}`;
+}
+
+/** Whether an event's [startsAt, endsAt) span touches `day` at all, comparing
+ *  calendar dates rather than exact instants -- used both to place all-day
+ *  bars under a day's header and to decide which timed events get a slice
+ *  drawn in that day's hourly column. */
+export function eventOverlapsDay(
+    event: CalendarEvent,
+    day: Date,
+    timeZone: string,
+): boolean {
+    const dayValue = dateInputValue(day, timeZone);
+    const startValue = dateInputValue(new Date(event.startsAt), timeZone);
+    const endValue = dateInputValue(
+        new Date(new Date(event.endsAt).getTime() - 1),
+        timeZone,
+    );
+    return dayValue >= startValue && dayValue <= endValue;
+}
+
+export interface AllDayLayoutItem {
+    event: CalendarEvent;
+    /** 0-based day-column index into the visible days, clamped to them. */
+    startCol: number;
+    endCol: number;
+    /** Which stacked row to draw this bar in, so overlapping events don't collide. */
+    row: number;
+}
+
+/** Lays out a set of all-day events as horizontal bars spanning the day
+ *  columns they cover (clamped to `days`), greedily packing non-overlapping
+ *  events into shared rows. Multi-day events are sorted ahead of single-day
+ *  ones (each group still ordered by start column) so they claim the topmost
+ *  rows -- they're the ones a day-level "+N more" truncation must never
+ *  hide, so keeping them low-numbered means the truncation logic can simply
+ *  always include whatever's in those rows. */
+export function layoutAllDayEvents(
+    events: CalendarEvent[],
+    days: Date[],
+    timeZone: string,
+): AllDayLayoutItem[] {
+    const dayValues = days.map((day) => dateInputValue(day, timeZone));
+
+    const spans = events
+        .map((event) => {
+            const startValue = dateInputValue(
+                new Date(event.startsAt),
+                timeZone,
+            );
+            const endValue = dateInputValue(
+                new Date(new Date(event.endsAt).getTime() - 1),
+                timeZone,
+            );
+            const foundStart = dayValues.findIndex(
+                (value) => value >= startValue,
+            );
+            const startCol = Math.max(0, foundStart);
+            let endCol = dayValues.length - 1;
+            for (let i = dayValues.length - 1; i >= 0; i--) {
+                if (dayValues[i] <= endValue) {
+                    endCol = i;
+                    break;
+                }
+            }
+            return { event, startCol, endCol };
+        })
+        .sort((a, b) => {
+            const aMultiDay = a.endCol > a.startCol;
+            const bMultiDay = b.endCol > b.startCol;
+            if (aMultiDay !== bMultiDay) return aMultiDay ? -1 : 1;
+            return a.startCol - b.startCol || a.endCol - b.endCol;
+        });
+
+    const rowEnds: number[] = [];
+    return spans.map(({ event, startCol, endCol }) => {
+        let row = rowEnds.findIndex((end) => end < startCol);
+        if (row === -1) {
+            row = rowEnds.length;
+            rowEnds.push(endCol);
+        } else {
+            rowEnds[row] = endCol;
+        }
+        return { event, startCol, endCol, row };
+    });
+}
+
+/** Horizontal position for an all-day bar, as a percentage of the day-column
+ *  area (past a fixed-width gutter, if any) -- keeps a spanning bar aligned
+ *  with its day columns responsively, without measuring anything in JS. */
+export function allDayBarLeft(
+    startCol: number,
+    totalDays: number,
+    gutterPx = 0,
+): string {
+    return `calc(${gutterPx}px + (100% - ${gutterPx}px) * ${startCol / totalDays} + 2px)`;
+}
+
+export function allDayBarWidth(
+    startCol: number,
+    endCol: number,
+    totalDays: number,
+    gutterPx = 0,
+): string {
+    return `calc((100% - ${gutterPx}px) * ${(endCol - startCol + 1) / totalDays} - 4px)`;
+}
+
+export interface AllDayDayInfo {
+    overflows: boolean;
+    shownItems: AllDayLayoutItem[];
+    hiddenCount: number;
+    /** Highest row among shownItems -- callers position a "+N more"/"Collapse"
+     *  control right below it, using their own pixel constants. */
+    maxShownRow: number;
+}
+
+/** Decides, for one day's worth of all-day bars, which stay visible when the
+ *  day overflows its budget. Multi-day events are never truncated -- only
+ *  single-day events are subject to the collapsed cap, filling whatever of
+ *  it the multi-day events touching this day haven't already used. */
+export function computeAllDayDayInfo(
+    dayItems: AllDayLayoutItem[],
+    expanded: boolean,
+    overflowThreshold: number,
+    visibleWhenCollapsed: number,
+): AllDayDayInfo {
+    const overflows = dayItems.length > overflowThreshold;
+    if (!overflows) {
+        return {
+            overflows,
+            shownItems: dayItems,
+            hiddenCount: 0,
+            maxShownRow: dayItems.length
+                ? Math.max(...dayItems.map((item) => item.row))
+                : 0,
+        };
+    }
+    let shownItems: AllDayLayoutItem[];
+    if (expanded) {
+        shownItems = dayItems;
+    } else {
+        const multiDayItems = dayItems.filter(
+            (item) => item.endCol > item.startCol,
+        );
+        const singleDayItems = dayItems
+            .filter((item) => item.endCol === item.startCol)
+            .sort((a, b) => a.row - b.row);
+        const singleDayBudget = Math.max(
+            0,
+            visibleWhenCollapsed - multiDayItems.length,
+        );
+        shownItems = [
+            ...multiDayItems,
+            ...singleDayItems.slice(0, singleDayBudget),
+        ];
+    }
+    return {
+        overflows,
+        shownItems,
+        hiddenCount: dayItems.length - shownItems.length,
+        maxShownRow: Math.max(...shownItems.map((item) => item.row)),
+    };
 }

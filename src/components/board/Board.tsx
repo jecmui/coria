@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Rnd } from "react-rnd";
 import { useBoardStore } from "../../store/boardStore";
 import { useAppearanceStore } from "../../store/appearanceStore";
@@ -8,7 +8,10 @@ import { NoteWidget } from "../widgets/NoteWidget";
 import { TimerWidget } from "../widgets/TimerWidget";
 import type { ImageData, NoteData, TimerData } from "../../types";
 import { ImageWidget } from "../widgets/ImageWidget";
-import { CalendarWidget } from "../widgets/CalendarWidget";
+import {
+    CalendarWidget,
+    type CalendarWidgetHandle,
+} from "../widgets/CalendarWidget";
 
 const WIDGET_TITLES: Record<string, string> = {
     todo: "Today",
@@ -53,6 +56,14 @@ export function Board({ onOpenFullList, onOpenCalendar }: BoardProps) {
     const [isMobile, setIsMobile] = useState(() =>
         typeof window !== "undefined" ? window.innerWidth < 768 : false,
     );
+    // Lifted out of CalendarWidget so its "Today" jump-back control can live
+    // in the shared widget title bar instead of the widget's own content.
+    const calendarWidgetRefs = useRef<
+        Record<string, CalendarWidgetHandle | null>
+    >({});
+    const [calendarTodayVisible, setCalendarTodayVisible] = useState<
+        Record<string, boolean>
+    >({});
 
     useEffect(() => {
         const mediaQuery = window.matchMedia("(max-width: 767px)");
@@ -109,8 +120,40 @@ export function Board({ onOpenFullList, onOpenCalendar }: BoardProps) {
         if (type === "image")
             return <ImageWidget widgetId={widgetId} data={data as ImageData} />;
         if (type === "calendar")
-            return <CalendarWidget onOpenCalendar={onOpenCalendar} />;
+            return (
+                <CalendarWidget
+                    ref={(handle) => {
+                        calendarWidgetRefs.current[widgetId] = handle;
+                    }}
+                    onOpenCalendar={onOpenCalendar}
+                    onTodayVisibleChange={(visible) =>
+                        setCalendarTodayVisible((state) =>
+                            state[widgetId] === visible
+                                ? state
+                                : { ...state, [widgetId]: visible },
+                        )
+                    }
+                />
+            );
         return null;
+    };
+
+    const renderHeaderActions = (widgetId: string, type: string) => {
+        if (type !== "calendar") return undefined;
+        // Defaults to hidden (assume today is visible) until the widget
+        // reports otherwise, so it doesn't flash in on first mount.
+        if (calendarTodayVisible[widgetId] ?? true) return undefined;
+        return (
+            <button
+                type="button"
+                onClick={() =>
+                    calendarWidgetRefs.current[widgetId]?.resetToToday()
+                }
+                className="rounded px-1.5 text-xs font-medium text-ink-soft transition hover:cursor-pointer hover:bg-black/5 hover:text-ink"
+            >
+                Today
+            </button>
+        );
     };
 
     const mobileWidgets = [...widgets].sort((a, b) => {
@@ -133,6 +176,10 @@ export function Board({ onOpenFullList, onOpenCalendar }: BoardProps) {
                                 type={widget.type}
                                 title={WIDGET_TITLES[widget.type]}
                                 onRemove={() => removeWidget(widget.id)}
+                                headerActions={renderHeaderActions(
+                                    widget.id,
+                                    widget.type,
+                                )}
                                 mobile
                             >
                                 {renderWidgetContent(
@@ -201,6 +248,10 @@ export function Board({ onOpenFullList, onOpenCalendar }: BoardProps) {
                         type={widget.type}
                         title={WIDGET_TITLES[widget.type]}
                         onRemove={() => removeWidget(widget.id)}
+                        headerActions={renderHeaderActions(
+                            widget.id,
+                            widget.type,
+                        )}
                     >
                         {renderWidgetContent(
                             widget.id,

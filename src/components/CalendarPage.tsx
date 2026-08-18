@@ -4,13 +4,19 @@ import type { CalendarEvent } from "../types/calendar";
 import {
     HOUR_HEIGHT,
     addDays,
+    addDaysToDateValue,
+    allDayBarLeft,
+    allDayBarWidth,
+    computeAllDayDayInfo,
     dateInputValue,
+    eventOverlapsDay,
     eventTopAndHeight,
     formatDayName,
     formatHour,
     formatTime,
     getWeekStart,
     inputValuesToUtcIso,
+    layoutAllDayEvents,
     sameCalendarDay,
     timeInputValue,
 } from "../lib/calendar";
@@ -32,6 +38,9 @@ interface EventDraft {
 }
 
 const WEEKDAYS = Array.from({ length: 7 }, (_, index) => index);
+/** Gutter width (px) reserved for the hourly grid's hour labels, shared by
+ *  the header row above it so day columns line up between the two. */
+const GUTTER_WIDTH = 64;
 /** Rendered height (px) of a day header's weekday-name + date-number block,
  *  measured from the actual markup below -- all-day bars are absolutely
  *  positioned starting right after it, so this has to match exactly or
@@ -44,112 +53,6 @@ const ALL_DAY_BAR_HEIGHT = 23;
 const ALL_DAY_OVERFLOW_THRESHOLD = 3;
 /** How many of an overflowing day's events stay visible before truncating. */
 const ALL_DAY_VISIBLE_WHEN_COLLAPSED = 2;
-
-/** Adds `days` to a "YYYY-MM-DD" value using pure calendar-date arithmetic
- *  (anchored to UTC internally), so it can't drift a day from the caller's
- *  timeZone the way mixing this with a locale-aware Date would. */
-function addDaysToDateValue(dateValue: string, days: number): string {
-    const [year, month, day] = dateValue.split("-").map(Number);
-    const date = new Date(Date.UTC(year, month - 1, day + days));
-    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(
-        date.getUTCDate(),
-    ).padStart(2, "0")}`;
-}
-
-/** Whether an event's [startsAt, endsAt) span touches `day` at all, comparing
- *  calendar dates rather than exact instants -- used both to place all-day
- *  chips under a day's header and to decide which timed events get a slice
- *  drawn in that day's hourly column. */
-function eventOverlapsDay(
-    event: CalendarEvent,
-    day: Date,
-    timeZone: string,
-): boolean {
-    const dayValue = dateInputValue(day, timeZone);
-    const startValue = dateInputValue(new Date(event.startsAt), timeZone);
-    const endValue = dateInputValue(
-        new Date(new Date(event.endsAt).getTime() - 1),
-        timeZone,
-    );
-    return dayValue >= startValue && dayValue <= endValue;
-}
-
-interface AllDayLayoutItem {
-    event: CalendarEvent;
-    /** 0-based day-column index into `days`, clamped to the visible week. */
-    startCol: number;
-    endCol: number;
-    /** Which stacked row to draw this bar in, so overlapping events don't collide. */
-    row: number;
-}
-
-/** Lays out a week's all-day events as horizontal bars spanning the day
- *  columns they cover (clamped to the visible week), greedily packing
- *  non-overlapping events into shared rows. Multi-day events are sorted
- *  ahead of single-day ones (each group still ordered by start column) so
- *  they claim the topmost rows -- they're the ones a day-level "+N more"
- *  truncation must never hide, so keeping them low-numbered means the
- *  truncation logic can simply always include whatever's in those rows. */
-function layoutAllDayEvents(
-    events: CalendarEvent[],
-    days: Date[],
-    timeZone: string,
-): AllDayLayoutItem[] {
-    const dayValues = days.map((day) => dateInputValue(day, timeZone));
-
-    const spans = events
-        .map((event) => {
-            const startValue = dateInputValue(
-                new Date(event.startsAt),
-                timeZone,
-            );
-            const endValue = dateInputValue(
-                new Date(new Date(event.endsAt).getTime() - 1),
-                timeZone,
-            );
-            const foundStart = dayValues.findIndex(
-                (value) => value >= startValue,
-            );
-            const startCol = Math.max(0, foundStart);
-            let endCol = dayValues.length - 1;
-            for (let i = dayValues.length - 1; i >= 0; i--) {
-                if (dayValues[i] <= endValue) {
-                    endCol = i;
-                    break;
-                }
-            }
-            return { event, startCol, endCol };
-        })
-        .sort((a, b) => {
-            const aMultiDay = a.endCol > a.startCol;
-            const bMultiDay = b.endCol > b.startCol;
-            if (aMultiDay !== bMultiDay) return aMultiDay ? -1 : 1;
-            return a.startCol - b.startCol || a.endCol - b.endCol;
-        });
-
-    const rowEnds: number[] = [];
-    return spans.map(({ event, startCol, endCol }) => {
-        let row = rowEnds.findIndex((end) => end < startCol);
-        if (row === -1) {
-            row = rowEnds.length;
-            rowEnds.push(endCol);
-        } else {
-            rowEnds[row] = endCol;
-        }
-        return { event, startCol, endCol, row };
-    });
-}
-
-/** Horizontal position for an all-day bar, as a percentage of the day-column
- *  area (past the fixed 64px gutter) -- keeps a spanning bar aligned with its
- *  day columns responsively, without measuring anything in JS. */
-function allDayBarLeft(startCol: number): string {
-    return `calc(64px + (100% - 64px) * ${startCol / 7} + 2px)`;
-}
-
-function allDayBarWidth(startCol: number, endCol: number): string {
-    return `calc((100% - 64px) * ${(endCol - startCol + 1) / 7} - 4px)`;
-}
 
 export function CalendarPage({ onBack }: CalendarPageProps) {
     const {
@@ -316,38 +219,17 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
         const dayItems = allDayLayout.filter(
             (item) => item.startCol <= index && item.endCol >= index,
         );
-        const overflows = dayItems.length > ALL_DAY_OVERFLOW_THRESHOLD;
-        if (!overflows) {
-            return { overflows, shownItems: dayItems, hiddenCount: 0, controlTop: 0 };
-        }
-        // Multi-day events are never truncated -- only single-day events are
-        // subject to the collapsed view's cap, filling whatever of it multi-day
-        // events touching this day haven't already used.
-        let shownItems: AllDayLayoutItem[];
-        if (allDayExpanded) {
-            shownItems = dayItems;
-        } else {
-            const multiDayItems = dayItems.filter(
-                (item) => item.endCol > item.startCol,
-            );
-            const singleDayItems = dayItems
-                .filter((item) => item.endCol === item.startCol)
-                .sort((a, b) => a.row - b.row);
-            const singleDayBudget = Math.max(
-                0,
-                ALL_DAY_VISIBLE_WHEN_COLLAPSED - multiDayItems.length,
-            );
-            shownItems = [
-                ...multiDayItems,
-                ...singleDayItems.slice(0, singleDayBudget),
-            ];
-        }
-        const maxShownRow = Math.max(...shownItems.map((item) => item.row));
+        const info = computeAllDayDayInfo(
+            dayItems,
+            allDayExpanded,
+            ALL_DAY_OVERFLOW_THRESHOLD,
+            ALL_DAY_VISIBLE_WHEN_COLLAPSED,
+        );
         return {
-            overflows,
-            shownItems,
-            hiddenCount: dayItems.length - shownItems.length,
-            controlTop: HEADER_TEXT_HEIGHT + (maxShownRow + 1) * ALL_DAY_BAR_HEIGHT,
+            ...info,
+            controlTop:
+                HEADER_TEXT_HEIGHT +
+                (info.maxShownRow + 1) * ALL_DAY_BAR_HEIGHT,
         };
     });
     // A bar renders if it's visible for *any* day it touches -- it's one
@@ -505,10 +387,16 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                     top:
                                         HEADER_TEXT_HEIGHT +
                                         item.row * ALL_DAY_BAR_HEIGHT,
-                                    left: allDayBarLeft(item.startCol),
+                                    left: allDayBarLeft(
+                                        item.startCol,
+                                        7,
+                                        GUTTER_WIDTH,
+                                    ),
                                     width: allDayBarWidth(
                                         item.startCol,
                                         item.endCol,
+                                        7,
+                                        GUTTER_WIDTH,
                                     ),
                                 }}
                                 className="absolute z-10 truncate rounded-md border border-pin-todo/40 bg-pin-todo/70 px-1.5 py-0.5 text-left text-[10px] font-medium text-ink shadow-sm hover:cursor-pointer hover:bg-pin-todo/80"
@@ -531,10 +419,16 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                         }
                                         style={{
                                             top: day.controlTop,
-                                            left: allDayBarLeft(index),
+                                            left: allDayBarLeft(
+                                                index,
+                                                7,
+                                                GUTTER_WIDTH,
+                                            ),
                                             width: allDayBarWidth(
                                                 index,
                                                 index,
+                                                7,
+                                                GUTTER_WIDTH,
                                             ),
                                         }}
                                         className="absolute z-10 truncate rounded-md px-1.5 py-0.5 text-left text-[10px] font-medium text-ink-soft hover:cursor-pointer hover:bg-black/5"
