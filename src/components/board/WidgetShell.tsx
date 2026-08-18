@@ -17,9 +17,9 @@ interface WidgetShellProps {
     /** Grab handle for reordering in the mobile stacked view; ignored on desktop. */
     dragHandleProps?: HTMLAttributes<HTMLSpanElement>;
     /** Extra controls rendered in the title bar, to the left of the remove
-     *  button -- e.g. the Calendar widget's "Today" jump-back control. Unlike
-     *  the remove button, these stay visible without hovering, since they're
-     *  functional state (not just widget chrome) the user needs to notice. */
+     *  button -- e.g. the Calendar widget's "Today" jump-back control. On
+     *  desktop these hide until hover, same as the remove button, for
+     *  visual consistency. */
     headerActions?: ReactNode;
     children: ReactNode;
 }
@@ -47,7 +47,9 @@ export function WidgetShell({
                             {title}
                         </span>
                         <div className="flex items-center gap-1">
-                            {headerActions}
+                            <div className="opacity-0 transition group-hover:opacity-100">
+                                {headerActions}
+                            </div>
                             <button
                                 onClick={onRemove}
                                 className="rounded px-1.5 text-ink-soft opacity-0 transition hover:bg-black/5 hover:text-ink group-hover:opacity-100"
