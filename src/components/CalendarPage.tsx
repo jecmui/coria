@@ -28,9 +28,128 @@ interface EventDraft {
     startTime: string;
     endDate: string;
     endTime: string;
+    allDay: boolean;
 }
 
 const WEEKDAYS = Array.from({ length: 7 }, (_, index) => index);
+/** Rendered height (px) of a day header's weekday-name + date-number block,
+ *  measured from the actual markup below -- all-day bars are absolutely
+ *  positioned starting right after it, so this has to match exactly or
+ *  they'd either overlap the date number or leave a gap under it. */
+const HEADER_TEXT_HEIGHT = 59;
+/** Rendered height (px) of one stacked all-day bar, margin included. */
+const ALL_DAY_BAR_HEIGHT = 23;
+/** A day whose own all-day events exceed this count gets truncated with a
+ *  "+N more" control instead of showing every one of them. */
+const ALL_DAY_OVERFLOW_THRESHOLD = 3;
+/** How many of an overflowing day's events stay visible before truncating. */
+const ALL_DAY_VISIBLE_WHEN_COLLAPSED = 2;
+
+/** Adds `days` to a "YYYY-MM-DD" value using pure calendar-date arithmetic
+ *  (anchored to UTC internally), so it can't drift a day from the caller's
+ *  timeZone the way mixing this with a locale-aware Date would. */
+function addDaysToDateValue(dateValue: string, days: number): string {
+    const [year, month, day] = dateValue.split("-").map(Number);
+    const date = new Date(Date.UTC(year, month - 1, day + days));
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(
+        date.getUTCDate(),
+    ).padStart(2, "0")}`;
+}
+
+/** Whether an event's [startsAt, endsAt) span touches `day` at all, comparing
+ *  calendar dates rather than exact instants -- used both to place all-day
+ *  chips under a day's header and to decide which timed events get a slice
+ *  drawn in that day's hourly column. */
+function eventOverlapsDay(
+    event: CalendarEvent,
+    day: Date,
+    timeZone: string,
+): boolean {
+    const dayValue = dateInputValue(day, timeZone);
+    const startValue = dateInputValue(new Date(event.startsAt), timeZone);
+    const endValue = dateInputValue(
+        new Date(new Date(event.endsAt).getTime() - 1),
+        timeZone,
+    );
+    return dayValue >= startValue && dayValue <= endValue;
+}
+
+interface AllDayLayoutItem {
+    event: CalendarEvent;
+    /** 0-based day-column index into `days`, clamped to the visible week. */
+    startCol: number;
+    endCol: number;
+    /** Which stacked row to draw this bar in, so overlapping events don't collide. */
+    row: number;
+}
+
+/** Lays out a week's all-day events as horizontal bars spanning the day
+ *  columns they cover (clamped to the visible week), greedily packing
+ *  non-overlapping events into shared rows. Multi-day events are sorted
+ *  ahead of single-day ones (each group still ordered by start column) so
+ *  they claim the topmost rows -- they're the ones a day-level "+N more"
+ *  truncation must never hide, so keeping them low-numbered means the
+ *  truncation logic can simply always include whatever's in those rows. */
+function layoutAllDayEvents(
+    events: CalendarEvent[],
+    days: Date[],
+    timeZone: string,
+): AllDayLayoutItem[] {
+    const dayValues = days.map((day) => dateInputValue(day, timeZone));
+
+    const spans = events
+        .map((event) => {
+            const startValue = dateInputValue(
+                new Date(event.startsAt),
+                timeZone,
+            );
+            const endValue = dateInputValue(
+                new Date(new Date(event.endsAt).getTime() - 1),
+                timeZone,
+            );
+            const foundStart = dayValues.findIndex(
+                (value) => value >= startValue,
+            );
+            const startCol = Math.max(0, foundStart);
+            let endCol = dayValues.length - 1;
+            for (let i = dayValues.length - 1; i >= 0; i--) {
+                if (dayValues[i] <= endValue) {
+                    endCol = i;
+                    break;
+                }
+            }
+            return { event, startCol, endCol };
+        })
+        .sort((a, b) => {
+            const aMultiDay = a.endCol > a.startCol;
+            const bMultiDay = b.endCol > b.startCol;
+            if (aMultiDay !== bMultiDay) return aMultiDay ? -1 : 1;
+            return a.startCol - b.startCol || a.endCol - b.endCol;
+        });
+
+    const rowEnds: number[] = [];
+    return spans.map(({ event, startCol, endCol }) => {
+        let row = rowEnds.findIndex((end) => end < startCol);
+        if (row === -1) {
+            row = rowEnds.length;
+            rowEnds.push(endCol);
+        } else {
+            rowEnds[row] = endCol;
+        }
+        return { event, startCol, endCol, row };
+    });
+}
+
+/** Horizontal position for an all-day bar, as a percentage of the day-column
+ *  area (past the fixed 64px gutter) -- keeps a spanning bar aligned with its
+ *  day columns responsively, without measuring anything in JS. */
+function allDayBarLeft(startCol: number): string {
+    return `calc(64px + (100% - 64px) * ${startCol / 7} + 2px)`;
+}
+
+function allDayBarWidth(startCol: number, endCol: number): string {
+    return `calc((100% - 64px) * ${(endCol - startCol + 1) / 7} - 4px)`;
+}
 
 export function CalendarPage({ onBack }: CalendarPageProps) {
     const {
@@ -45,6 +164,7 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
     } = useCalendarStore();
     const [currentDate, setCurrentDate] = useState(new Date());
     const [draft, setDraft] = useState<EventDraft | null>(null);
+    const [allDayExpanded, setAllDayExpanded] = useState(false);
 
     const weekStart = useMemo(
         () => getWeekStart(currentDate, settings.weekStart),
@@ -80,6 +200,7 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
             startTime: timeInputValue(start, settings.timeZone),
             endDate: dateInputValue(end, settings.timeZone),
             endTime: timeInputValue(end, settings.timeZone),
+            allDay: false,
         };
     }
 
@@ -119,6 +240,7 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
             ),
             endDate: dateInputValue(new Date(event.endsAt), settings.timeZone),
             endTime: timeInputValue(new Date(event.endsAt), settings.timeZone),
+            allDay: event.allDay,
         });
     }
 
@@ -126,25 +248,40 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
         if (
             !draft?.title.trim() ||
             !draft.startDate ||
-            !draft.startTime ||
             !draft.endDate ||
-            !draft.endTime
+            (!draft.allDay && (!draft.startTime || !draft.endTime))
         )
             return;
+        // All-day events ignore the time-of-day inputs and instead span the
+        // full day(s) from startDate through endDate, exclusive end (the
+        // start of the day after endDate), matching Google Calendar.
         const event = {
             title: draft.title.trim(),
             description: draft.description.trim(),
             location: draft.location.trim(),
-            startsAt: inputValuesToUtcIso(
-                draft.startDate,
-                draft.startTime,
-                settings.timeZone,
-            ),
-            endsAt: inputValuesToUtcIso(
-                draft.endDate,
-                draft.endTime,
-                settings.timeZone,
-            ),
+            startsAt: draft.allDay
+                ? inputValuesToUtcIso(
+                      draft.startDate,
+                      "00:00",
+                      settings.timeZone,
+                  )
+                : inputValuesToUtcIso(
+                      draft.startDate,
+                      draft.startTime,
+                      settings.timeZone,
+                  ),
+            endsAt: draft.allDay
+                ? inputValuesToUtcIso(
+                      addDaysToDateValue(draft.endDate, 1),
+                      "00:00",
+                      settings.timeZone,
+                  )
+                : inputValuesToUtcIso(
+                      draft.endDate,
+                      draft.endTime,
+                      settings.timeZone,
+                  ),
+            allDay: draft.allDay,
         };
         if (new Date(event.endsAt) <= new Date(event.startsAt)) return;
         const saved = draft.id
@@ -158,10 +295,80 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
         if (await removeEvent(draft.id)) setDraft(null);
     }
 
-    const visibleEvents = events.filter((event) =>
-        days.some((day) =>
-            sameCalendarDay(new Date(event.startsAt), day, settings.timeZone),
+    // Overlap with the visible week, not just a start within it -- otherwise an
+    // event that began before this week but runs into it goes missing here too.
+    const visibleWeekEnd = addDays(weekStart, 7);
+    const visibleEvents = events.filter((event) => {
+        const eventStart = new Date(event.startsAt);
+        const eventEnd = new Date(event.endsAt);
+        return eventStart < visibleWeekEnd && eventEnd > weekStart;
+    });
+    const allDayLayout = layoutAllDayEvents(
+        visibleEvents.filter((event) => event.allDay),
+        days,
+        settings.timeZone,
+    );
+    // Per day (not globally): a day whose own touching events exceed the
+    // threshold truncates to its lowest-row events, with a control to expand
+    // it -- a day with few events always shows all of them regardless of
+    // what's happening elsewhere in the week.
+    const allDayPerDay = days.map((_, index) => {
+        const dayItems = allDayLayout.filter(
+            (item) => item.startCol <= index && item.endCol >= index,
+        );
+        const overflows = dayItems.length > ALL_DAY_OVERFLOW_THRESHOLD;
+        if (!overflows) {
+            return { overflows, shownItems: dayItems, hiddenCount: 0, controlTop: 0 };
+        }
+        // Multi-day events are never truncated -- only single-day events are
+        // subject to the collapsed view's cap, filling whatever of it multi-day
+        // events touching this day haven't already used.
+        let shownItems: AllDayLayoutItem[];
+        if (allDayExpanded) {
+            shownItems = dayItems;
+        } else {
+            const multiDayItems = dayItems.filter(
+                (item) => item.endCol > item.startCol,
+            );
+            const singleDayItems = dayItems
+                .filter((item) => item.endCol === item.startCol)
+                .sort((a, b) => a.row - b.row);
+            const singleDayBudget = Math.max(
+                0,
+                ALL_DAY_VISIBLE_WHEN_COLLAPSED - multiDayItems.length,
+            );
+            shownItems = [
+                ...multiDayItems,
+                ...singleDayItems.slice(0, singleDayBudget),
+            ];
+        }
+        const maxShownRow = Math.max(...shownItems.map((item) => item.row));
+        return {
+            overflows,
+            shownItems,
+            hiddenCount: dayItems.length - shownItems.length,
+            controlTop: HEADER_TEXT_HEIGHT + (maxShownRow + 1) * ALL_DAY_BAR_HEIGHT,
+        };
+    });
+    // A bar renders if it's visible for *any* day it touches -- it's one
+    // continuous shape, so it can't be shown for one day and hidden for
+    // another day it also spans.
+    const visibleAllDayEventIds = new Set(
+        allDayPerDay.flatMap(({ shownItems }) =>
+            shownItems.map((item) => item.event.id),
         ),
+    );
+    const visibleAllDayLayout = allDayLayout.filter((item) =>
+        visibleAllDayEventIds.has(item.event.id),
+    );
+    const headerRowHeight = Math.max(
+        HEADER_TEXT_HEIGHT,
+        ...visibleAllDayLayout.map(
+            (item) => HEADER_TEXT_HEIGHT + (item.row + 1) * ALL_DAY_BAR_HEIGHT,
+        ),
+        ...allDayPerDay
+            .filter((day) => day.overflows)
+            .map((day) => day.controlTop + ALL_DAY_BAR_HEIGHT),
     );
 
     return (
@@ -254,8 +461,20 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                 </div>
 
                 <div className="min-h-0 flex-1 overflow-auto">
-                    <div className="sticky top-0 z-20 grid min-w-225 grid-cols-[64px_repeat(7,minmax(0,1fr))] bg-paper">
-                        <div className="sticky left-0 top-0 z-20 border-r border-paper-edge bg-paper" />
+                    {/* A single header row -- no extra grid row for all-day events.
+                        Each day cell (and the gutter) reserves extra height via
+                        min-height when there are all-day bars to show, so they stay
+                        inside the same bordered cells, growing those cells instead of
+                        adding a new one. The bars themselves are position:absolute
+                        (anchored to this sticky container, which -- like relative --
+                        establishes a containing block), sized with percentage-based
+                        calc() so a multi-day bar spans continuously across day
+                        columns and simply paints over the border lines it crosses. */}
+                    <div className="sticky top-0 z-20 grid min-w-225 grid-cols-[64px_repeat(7,minmax(0,1fr))] border-b border-paper-edge bg-paper">
+                        <div
+                            className="sticky left-0 z-20 border-r border-paper-edge"
+                            style={{ minHeight: headerRowHeight }}
+                        />
                         {days.map((day) => {
                             const today = sameCalendarDay(
                                 day,
@@ -265,7 +484,8 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                             return (
                                 <div
                                     key={day.toISOString()}
-                                    className={`sticky top-0 z-20 border-b border-r border-paper-edge bg-paper px-2 py-2 text-center ${today ? "text-pin-todo" : "text-ink"}`}
+                                    style={{ minHeight: headerRowHeight }}
+                                    className={`border-r border-paper-edge px-2 py-2 text-center ${today ? "text-pin-todo" : "text-ink"}`}
                                 >
                                     <p className="text-[10px] font-semibold uppercase text-ink-soft">
                                         {formatDayName(day, settings)}
@@ -276,6 +496,55 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                 </div>
                             );
                         })}
+                        {visibleAllDayLayout.map((item) => (
+                            <button
+                                key={item.event.id}
+                                type="button"
+                                onClick={() => editEvent(item.event)}
+                                style={{
+                                    top:
+                                        HEADER_TEXT_HEIGHT +
+                                        item.row * ALL_DAY_BAR_HEIGHT,
+                                    left: allDayBarLeft(item.startCol),
+                                    width: allDayBarWidth(
+                                        item.startCol,
+                                        item.endCol,
+                                    ),
+                                }}
+                                className="absolute z-10 truncate rounded-md border border-pin-todo/40 bg-pin-todo/70 px-1.5 py-0.5 text-left text-[10px] font-medium text-ink shadow-sm hover:cursor-pointer hover:bg-pin-todo/80"
+                            >
+                                {item.event.title}
+                            </button>
+                        ))}
+                        {/* Per-day "+N more" / "Collapse" control -- only the days that
+                            individually overflow get one, all driven by the same shared
+                            expand state (a bar can't be shown for one day and hidden for
+                            another it also spans). */}
+                        {allDayPerDay.map(
+                            (day, index) =>
+                                day.overflows && (
+                                    <button
+                                        key={`allday-toggle-${index}`}
+                                        type="button"
+                                        onClick={() =>
+                                            setAllDayExpanded((e) => !e)
+                                        }
+                                        style={{
+                                            top: day.controlTop,
+                                            left: allDayBarLeft(index),
+                                            width: allDayBarWidth(
+                                                index,
+                                                index,
+                                            ),
+                                        }}
+                                        className="absolute z-10 truncate rounded-md px-1.5 py-0.5 text-left text-[10px] font-medium text-ink-soft hover:cursor-pointer hover:bg-black/5"
+                                    >
+                                        {allDayExpanded
+                                            ? "Collapse"
+                                            : `+${day.hiddenCount} more`}
+                                    </button>
+                                ),
+                        )}
                     </div>
 
                     <div className="grid min-w-225 grid-cols-[64px_repeat(7,minmax(0,1fr))]">
@@ -291,12 +560,14 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                             ))}
                         </div>
                         {days.map((day) => {
-                            const dayEvents = visibleEvents.filter((event) =>
-                                sameCalendarDay(
-                                    new Date(event.startsAt),
-                                    day,
-                                    settings.timeZone,
-                                ),
+                            const dayEvents = visibleEvents.filter(
+                                (event) =>
+                                    !event.allDay &&
+                                    eventOverlapsDay(
+                                        event,
+                                        day,
+                                        settings.timeZone,
+                                    ),
                             );
                             return (
                                 <div
@@ -322,15 +593,22 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                         />
                                     ))}
                                     {dayEvents.map((event) => {
-                                        const { top, height } =
-                                            eventTopAndHeight(
-                                                event.startsAt,
-                                                event.endsAt,
-                                                day,
-                                                settings.timeZone,
-                                            );
+                                        const segment = eventTopAndHeight(
+                                            event.startsAt,
+                                            event.endsAt,
+                                            day,
+                                            settings.timeZone,
+                                        );
+                                        if (!segment) return null;
+                                        const {
+                                            top,
+                                            height,
+                                            continuesFromPrevDay,
+                                            continuesToNextDay,
+                                        } = segment;
                                         const showDetails =
-                                            height >= HOUR_HEIGHT;
+                                            height >= HOUR_HEIGHT &&
+                                            !continuesFromPrevDay;
                                         return (
                                             <button
                                                 key={event.id}
@@ -342,10 +620,21 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                                     mouseEvent.stopPropagation();
                                                     editEvent(event);
                                                 }}
-                                                className="absolute left-1 right-1 flex flex-col items-start justify-start overflow-hidden rounded-md border border-pin-todo/40 bg-pin-todo/70 px-2 py-1 text-left text-xs text-ink shadow-sm hover:cursor-pointer hover:bg-pin-todo/8"
+                                                className={`absolute left-1 right-1 flex flex-col items-start justify-start overflow-hidden border border-pin-todo/40 bg-pin-todo/70 px-2 py-1 text-left text-xs text-ink shadow-sm hover:cursor-pointer hover:bg-pin-todo/8 ${
+                                                    continuesFromPrevDay
+                                                        ? ""
+                                                        : "rounded-t-md"
+                                                } ${
+                                                    continuesToNextDay
+                                                        ? ""
+                                                        : "rounded-b-md"
+                                                }`}
                                                 style={{ top, height }}
                                             >
                                                 <p className="w-full truncate font-semibold">
+                                                    {continuesFromPrevDay
+                                                        ? "‹ "
+                                                        : ""}
                                                     {event.title}
                                                 </p>
                                                 {showDetails && (
@@ -408,41 +697,90 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                     <span className="text-xs font-semibold text-ink-soft">
                                         Start
                                     </span>
-                                    <input
-                                        type="datetime-local"
-                                        value={`${draft.startDate}T${draft.startTime}`}
-                                        onChange={(event) => {
-                                            const [date, time] =
-                                                event.target.value.split("T");
-                                            setDraft({
-                                                ...draft,
-                                                startDate: date,
-                                                startTime: time,
-                                            });
-                                        }}
-                                        className="w-full rounded-xl border border-paper-edge bg-board/40 px-3 py-2 text-sm outline-none"
-                                    />
+                                    {draft.allDay ? (
+                                        <input
+                                            type="date"
+                                            value={draft.startDate}
+                                            onChange={(event) =>
+                                                setDraft({
+                                                    ...draft,
+                                                    startDate:
+                                                        event.target.value,
+                                                })
+                                            }
+                                            className="w-full rounded-xl border border-paper-edge bg-board/40 px-3 py-2 text-sm outline-none"
+                                        />
+                                    ) : (
+                                        <input
+                                            type="datetime-local"
+                                            value={`${draft.startDate}T${draft.startTime}`}
+                                            onChange={(event) => {
+                                                const [date, time] =
+                                                    event.target.value.split(
+                                                        "T",
+                                                    );
+                                                setDraft({
+                                                    ...draft,
+                                                    startDate: date,
+                                                    startTime: time,
+                                                });
+                                            }}
+                                            className="w-full rounded-xl border border-paper-edge bg-board/40 px-3 py-2 text-sm outline-none"
+                                        />
+                                    )}
                                 </label>
                                 <label className="block space-y-1">
                                     <span className="text-xs font-semibold text-ink-soft">
                                         End
                                     </span>
-                                    <input
-                                        type="datetime-local"
-                                        value={`${draft.endDate}T${draft.endTime}`}
-                                        onChange={(event) => {
-                                            const [date, time] =
-                                                event.target.value.split("T");
-                                            setDraft({
-                                                ...draft,
-                                                endDate: date,
-                                                endTime: time,
-                                            });
-                                        }}
-                                        className="w-full rounded-xl border border-paper-edge bg-board/40 px-3 py-2 text-sm outline-none"
-                                    />
+                                    {draft.allDay ? (
+                                        <input
+                                            type="date"
+                                            value={draft.endDate}
+                                            onChange={(event) =>
+                                                setDraft({
+                                                    ...draft,
+                                                    endDate: event.target.value,
+                                                })
+                                            }
+                                            className="w-full rounded-xl border border-paper-edge bg-board/40 px-3 py-2 text-sm outline-none"
+                                        />
+                                    ) : (
+                                        <input
+                                            type="datetime-local"
+                                            value={`${draft.endDate}T${draft.endTime}`}
+                                            onChange={(event) => {
+                                                const [date, time] =
+                                                    event.target.value.split(
+                                                        "T",
+                                                    );
+                                                setDraft({
+                                                    ...draft,
+                                                    endDate: date,
+                                                    endTime: time,
+                                                });
+                                            }}
+                                            className="w-full rounded-xl border border-paper-edge bg-board/40 px-3 py-2 text-sm outline-none"
+                                        />
+                                    )}
                                 </label>
                             </div>
+                            <label className="flex items-center gap-2">
+                                <input
+                                    type="checkbox"
+                                    checked={draft.allDay}
+                                    onChange={(event) =>
+                                        setDraft({
+                                            ...draft,
+                                            allDay: event.target.checked,
+                                        })
+                                    }
+                                    className="h-3.5 w-3.5 accent-pin-todo"
+                                />
+                                <span className="text-xs font-semibold text-ink-soft">
+                                    All day
+                                </span>
+                            </label>
                             <label className="block space-y-1">
                                 <span className="text-xs font-semibold text-ink-soft">
                                     Description

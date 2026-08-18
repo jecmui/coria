@@ -291,3 +291,13 @@ alter table user_preferences
   add column today_clear_time_zone text,
   add column today_clear_scope text not null default 'completed',
   add column today_last_auto_clear_date date;
+
+-- Groundwork for Google Calendar sync. `source` distinguishes locally-created
+-- events from ones mirrored from an external provider; `external_id` maps a
+-- mirrored event back to that provider's event id for updates and deletes,
+-- and is only meaningful when source != 'local'. `all_day` flags date-only
+-- events with no specific time, as Google Calendar represents them.
+alter table calendar_events
+  add column source text not null default 'local',
+  add column external_id text,
+  add column all_day boolean not null default false;

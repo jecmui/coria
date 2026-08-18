@@ -1,6 +1,16 @@
 import { create } from "zustand";
 import { supabase } from "../lib/supabase";
-import type { CalendarEvent, CalendarSettings } from "../types/calendar";
+import type {
+    CalendarEvent,
+    CalendarEventSource,
+    CalendarSettings,
+} from "../types/calendar";
+
+/** Fields a caller can create/update an event without specifying -- creation
+ *  defaults them (see addEvent), and updates leave them untouched so editing
+ *  an event through the local UI can't clobber a mirrored event's Google
+ *  linkage. */
+type OptionalEventFields = "allDay" | "source" | "externalId";
 
 export const DEFAULT_CALENDAR_SETTINGS: CalendarSettings = {
     weekStart: 0,
@@ -17,7 +27,13 @@ interface CalendarEventRow {
     location: string | null;
     starts_at: string;
     ends_at: string;
+    all_day: boolean;
+    source: string;
+    external_id: string | null;
 }
+
+const EVENT_COLUMNS =
+    "id, title, description, location, starts_at, ends_at, all_day, source, external_id";
 
 interface CalendarState {
     userId: string | null;
@@ -31,11 +47,13 @@ interface CalendarState {
     loadEvents: (start: string, end: string) => Promise<void>;
     saveSettings: (settings: CalendarSettings) => Promise<boolean>;
     addEvent: (
-        event: Omit<CalendarEvent, "id">,
+        event: Omit<CalendarEvent, "id" | OptionalEventFields> &
+            Partial<Pick<CalendarEvent, OptionalEventFields>>,
     ) => Promise<CalendarEvent | null>;
     updateEvent: (
         id: string,
-        event: Omit<CalendarEvent, "id">,
+        event: Omit<CalendarEvent, "id" | OptionalEventFields> &
+            Partial<Pick<CalendarEvent, OptionalEventFields>>,
     ) => Promise<boolean>;
     removeEvent: (id: string) => Promise<boolean>;
     clear: () => void;
@@ -49,6 +67,9 @@ function rowToEvent(row: CalendarEventRow): CalendarEvent {
         location: row.location ?? "",
         startsAt: row.starts_at,
         endsAt: row.ends_at,
+        allDay: row.all_day,
+        source: row.source as CalendarEventSource,
+        externalId: row.external_id,
     };
 }
 
@@ -99,11 +120,14 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
         if (!userId) return;
         set({ loading: true, error: null });
 
+        // Fetch by overlap with [start, end), not just a starts_at within it --
+        // otherwise a multi-day event (or all-day event spanning several days)
+        // that began before `start` but continues into the range goes missing.
         const { data, error } = await supabase
             .from("calendar_events")
-            .select("id, title, description, location, starts_at, ends_at")
-            .gte("starts_at", start)
+            .select(EVENT_COLUMNS)
             .lt("starts_at", end)
+            .gt("ends_at", start)
             .order("starts_at", { ascending: true });
 
         if (error) {
@@ -154,8 +178,11 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
                 location: event.location,
                 starts_at: event.startsAt,
                 ends_at: event.endsAt,
+                all_day: event.allDay ?? false,
+                source: event.source ?? "local",
+                external_id: event.externalId ?? null,
             })
-            .select("id, title, description, location, starts_at, ends_at")
+            .select(EVENT_COLUMNS)
             .single();
 
         if (error || !data) {
@@ -172,6 +199,10 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
     },
 
     updateEvent: async (id, event) => {
+        // allDay/source/externalId are only included when the caller actually
+        // provides them, so editing an event through the local UI (which
+        // doesn't know about them) can't clobber a mirrored event's Google
+        // linkage back to its defaults.
         const { error } = await supabase
             .from("calendar_events")
             .update({
@@ -180,6 +211,11 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
                 location: event.location,
                 starts_at: event.startsAt,
                 ends_at: event.endsAt,
+                ...(event.allDay !== undefined && { all_day: event.allDay }),
+                ...(event.source !== undefined && { source: event.source }),
+                ...(event.externalId !== undefined && {
+                    external_id: event.externalId,
+                }),
             })
             .eq("id", id);
         if (error) {
@@ -188,7 +224,7 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
         }
         set((state) => ({
             events: state.events
-                .map((item) => (item.id === id ? { id, ...event } : item))
+                .map((item) => (item.id === id ? { ...item, ...event } : item))
                 .sort((a, b) => a.startsAt.localeCompare(b.startsAt)),
         }));
         return true;

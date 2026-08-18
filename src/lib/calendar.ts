@@ -124,39 +124,63 @@ export function zonedDateTimeToUtcIso(
     return localWallTimeToUtcIso(wall, timeZone);
 }
 
+export interface EventDaySegment {
+    top: number;
+    height: number;
+    /** This day's slice is a continuation from an earlier day -- it has no
+     *  real start edge here (draw its top corners square). */
+    continuesFromPrevDay: boolean;
+    /** This day's slice continues into a later day -- it has no real end
+     *  edge here (draw its bottom corners square). */
+    continuesToNextDay: boolean;
+}
+
+/** Where and how tall to draw `day`'s slice of an event that may span
+ *  multiple days, clamped to that day's [00:00, 24:00) bounds. Returns null
+ *  if the event doesn't touch `day` at all. */
 export function eventTopAndHeight(
     startsAt: string,
     endsAt: string,
     day: Date,
     timeZone: string,
-) {
+): EventDaySegment | null {
     const start = new Date(startsAt);
     const end = new Date(endsAt);
-    const parts = (value: Date) => {
-        const formatted = new Intl.DateTimeFormat("en-US", {
+    const dayValue = dateInputValue(day, timeZone);
+    const startDayValue = dateInputValue(start, timeZone);
+    // endsAt is exclusive -- an event ending exactly at midnight doesn't
+    // occupy that day, so use the instant just before it to find its day.
+    const endDayValue = dateInputValue(new Date(end.getTime() - 1), timeZone);
+
+    if (dayValue < startDayValue || dayValue > endDayValue) return null;
+
+    const wallMinutes = (value: Date) => {
+        const parts = new Intl.DateTimeFormat("en-US", {
             timeZone,
             hour: "2-digit",
             minute: "2-digit",
             hourCycle: "h23",
         }).formatToParts(value);
-        return {
-            hour: Number(formatted.find((part) => part.type === "hour")?.value),
-            minute: Number(
-                formatted.find((part) => part.type === "minute")?.value,
-            ),
-        };
+        const hour = Number(
+            parts.find((part) => part.type === "hour")?.value,
+        );
+        const minute = Number(
+            parts.find((part) => part.type === "minute")?.value,
+        );
+        return hour * 60 + minute;
     };
-    const startParts = parts(start);
-    const endParts = parts(end);
-    const top = (startParts.hour * 60 + startParts.minute) * (HOUR_HEIGHT / 60);
-    const endMinutes = endParts.hour * 60 + endParts.minute;
-    const startMinutes = startParts.hour * 60 + startParts.minute;
+
+    const continuesFromPrevDay = dayValue !== startDayValue;
+    const continuesToNextDay = dayValue !== endDayValue;
+    const startMinutes = continuesFromPrevDay ? 0 : wallMinutes(start);
+    const endMinutes = continuesToNextDay ? 24 * 60 : wallMinutes(end);
+
+    const top = startMinutes * (HOUR_HEIGHT / 60);
     const height = Math.max(
         HOUR_HEIGHT / 4,
         (endMinutes - startMinutes) * (HOUR_HEIGHT / 60),
     );
-    void day;
-    return { top, height };
+    return { top, height, continuesFromPrevDay, continuesToNextDay };
 }
 
 export function dateInputValue(date: Date, timeZone: string) {
