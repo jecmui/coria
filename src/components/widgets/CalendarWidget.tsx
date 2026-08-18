@@ -13,6 +13,7 @@ import {
     allDayBarWidth,
     computeAllDayDayInfo,
     eventOverlapsDay,
+    expandRecurringEvents,
     formatDayName,
     formatMonthDay,
     formatTime,
@@ -109,15 +110,17 @@ export const CalendarWidget = forwardRef<
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [todayVisible]);
 
-    // Overlap with the visible range, not just a start within it -- otherwise
-    // an event that began before it but runs into it goes missing here too.
+    // Expands recurring masters into this range's concrete occurrences (and
+    // filters non-recurring events to the same overlap check as before) in
+    // one pass -- see expandRecurringEvents in lib/calendar.ts.
     const rangeStart = days[0];
     const rangeEnd = addDays(days[days.length - 1], 1);
-    const visibleEvents = events.filter((event) => {
-        const eventStart = new Date(event.startsAt);
-        const eventEnd = new Date(event.endsAt);
-        return eventStart < rangeEnd && eventEnd > rangeStart;
-    });
+    const visibleEvents = expandRecurringEvents(
+        events,
+        rangeStart,
+        rangeEnd,
+        settings.timeZone,
+    );
 
     // Same all-day layout system as the full Calendar page (lib/calendar.ts):
     // continuous multi-day bars, always shown and prioritized over single-day

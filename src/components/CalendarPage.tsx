@@ -1,24 +1,36 @@
 import { useEffect, useMemo, useState } from "react";
+import { RRule, Weekday } from "rrule";
 import { useCalendarStore } from "../store/calendarStore";
-import type { CalendarEvent } from "../types/calendar";
+import type { CalendarEvent, CalendarSettings } from "../types/calendar";
+import type {
+    CustomRepeatUnit,
+    RepeatEndMode,
+    RepeatPreset,
+} from "../lib/calendar";
 import {
     HOUR_HEIGHT,
     addDays,
     addDaysToDateValue,
     allDayBarLeft,
     allDayBarWidth,
+    buildRecurrenceRule,
     computeAllDayDayInfo,
     dateInputValue,
+    expandRecurringEvents,
     eventOverlapsDay,
     eventTopAndHeight,
+    floatingUtcToDateValue,
     formatDayName,
     formatHour,
+    formatMonthDay,
     formatTime,
     getWeekStart,
     inputValuesToUtcIso,
     layoutAllDayEvents,
+    ordinalWeekdayOfMonth,
     sameCalendarDay,
     timeInputValue,
+    weekdayIndexOfDateValue,
 } from "../lib/calendar";
 
 interface CalendarPageProps {
@@ -35,9 +47,197 @@ interface EventDraft {
     endDate: string;
     endTime: string;
     allDay: boolean;
+    repeatPreset: RepeatPreset;
+    customInterval: number;
+    customUnit: CustomRepeatUnit;
+    /** Date.getDay()-style indices (0=Sunday..6=Saturday). */
+    customWeekdays: number[];
+    repeatEndMode: RepeatEndMode;
+    repeatEndDate: string;
+    repeatCount: number;
 }
 
 const WEEKDAYS = Array.from({ length: 7 }, (_, index) => index);
+const ORDINAL_WORDS: Record<number, string> = {
+    1: "first",
+    2: "second",
+    3: "third",
+    4: "fourth",
+    [-1]: "last",
+};
+const CUSTOM_UNIT_LABELS: Record<CustomRepeatUnit, { singular: string; plural: string }> = {
+    day: { singular: "day", plural: "days" },
+    week: { singular: "week", plural: "weeks" },
+    month: { singular: "month", plural: "months" },
+    year: { singular: "year", plural: "years" },
+};
+const WEEKDAY_TOGGLES = [
+    { index: 1, label: "M" },
+    { index: 2, label: "T" },
+    { index: 3, label: "W" },
+    { index: 4, label: "T" },
+    { index: 5, label: "F" },
+    { index: 6, label: "S" },
+    { index: 0, label: "S" },
+];
+
+interface RepeatDraftState {
+    repeatPreset: RepeatPreset;
+    customInterval: number;
+    customUnit: CustomRepeatUnit;
+    customWeekdays: number[];
+    repeatEndMode: RepeatEndMode;
+    repeatEndDate: string;
+    repeatCount: number;
+}
+
+const DEFAULT_REPEAT_STATE: RepeatDraftState = {
+    repeatPreset: "none",
+    customInterval: 1,
+    customUnit: "week",
+    customWeekdays: [],
+    repeatEndMode: "never",
+    repeatEndDate: "",
+    repeatCount: 1,
+};
+
+/** Date.getDay()-style weekday index (0=Sunday..6=Saturday) for a value
+ *  parsed out of an RRULE's BYDAY -- rrule's own Weekday class already
+ *  knows how to do this (getJsWeekday()), but RRule.parseString's declared
+ *  return type also allows a bare string/number entry, so this covers
+ *  those cases defensively even though rrule only ever actually returns
+ *  Weekday instances in practice. */
+function jsWeekdayOfByDayEntry(entry: string | number | Weekday): number {
+    if (entry instanceof Weekday) return entry.getJsWeekday();
+    const codes = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
+    const rruleIndex = typeof entry === "number" ? entry : codes.indexOf(entry);
+    return rruleIndex === -1 ? -1 : (rruleIndex + 1) % 7;
+}
+
+/** Reverse-parses a stored recurrenceRule back into the repeat picker's
+ *  draft state for editing, mapping it to the closest matching preset
+ *  (falling back to "custom" when nothing matches cleanly) -- the end
+ *  condition (never/on date/after count) is shared across every preset, so
+ *  it's always extracted regardless of which preset matched. */
+function repeatStateFromRule(
+    recurrenceRule: string | null,
+    startsAt: string,
+    timeZone: string,
+): RepeatDraftState {
+    if (!recurrenceRule) return DEFAULT_REPEAT_STATE;
+
+    let parsed: ReturnType<typeof RRule.parseString>;
+    try {
+        parsed = RRule.parseString(recurrenceRule);
+    } catch {
+        return DEFAULT_REPEAT_STATE;
+    }
+
+    const state = { ...DEFAULT_REPEAT_STATE };
+    if (parsed.count) {
+        state.repeatEndMode = "afterCount";
+        state.repeatCount = parsed.count;
+    } else if (parsed.until) {
+        state.repeatEndMode = "onDate";
+        state.repeatEndDate = floatingUtcToDateValue(parsed.until);
+    }
+
+    const startDateValue = dateInputValue(new Date(startsAt), timeZone);
+    const startWeekday = weekdayIndexOfDateValue(startDateValue);
+    const interval = parsed.interval ?? 1;
+    const byweekdayRaw = parsed.byweekday;
+    const byweekday = Array.isArray(byweekdayRaw)
+        ? byweekdayRaw
+        : byweekdayRaw
+          ? [byweekdayRaw]
+          : [];
+    const weekdayIndices = byweekday.map(jsWeekdayOfByDayEntry);
+    const singleOrdinal =
+        byweekday.length === 1 && byweekday[0] instanceof Weekday
+            ? byweekday[0].n
+            : undefined;
+
+    if (interval === 1 && parsed.freq === RRule.DAILY && byweekday.length === 0) {
+        state.repeatPreset = "daily";
+    } else if (
+        interval === 1 &&
+        parsed.freq === RRule.WEEKLY &&
+        weekdayIndices.length === 5 &&
+        [0, 1, 2, 3, 4, 5, 6]
+            .filter((day) => day !== 0 && day !== 6)
+            .every((day) => weekdayIndices.includes(day))
+    ) {
+        state.repeatPreset = "weekdays";
+    } else if (
+        interval === 1 &&
+        parsed.freq === RRule.WEEKLY &&
+        weekdayIndices.length === 1 &&
+        singleOrdinal === undefined &&
+        weekdayIndices[0] === startWeekday
+    ) {
+        state.repeatPreset = "weekly";
+    } else if (
+        interval === 1 &&
+        parsed.freq === RRule.MONTHLY &&
+        weekdayIndices.length === 1 &&
+        weekdayIndices[0] === startWeekday &&
+        singleOrdinal === ordinalWeekdayOfMonth(startDateValue)
+    ) {
+        state.repeatPreset = "monthlyNthWeekday";
+    } else if (
+        interval === 1 &&
+        parsed.freq === RRule.YEARLY &&
+        weekdayIndices.length === 0
+    ) {
+        state.repeatPreset = "annually";
+    } else {
+        state.repeatPreset = "custom";
+        state.customInterval = interval;
+        state.customUnit =
+            parsed.freq === RRule.DAILY
+                ? "day"
+                : parsed.freq === RRule.WEEKLY
+                  ? "week"
+                  : parsed.freq === RRule.MONTHLY
+                    ? "month"
+                    : "year";
+        state.customWeekdays = weekdayIndices;
+    }
+
+    return state;
+}
+
+/** Human-readable labels for the repeat picker's fixed presets, derived
+ *  live from the draft's start date so e.g. "Monthly" reads as "Monthly on
+ *  the third Tuesday" once a start date is chosen. */
+function describeRepeatPresets(startDate: string, settings: CalendarSettings) {
+    if (!startDate) {
+        return {
+            daily: "Daily",
+            weekly: "Weekly",
+            monthlyNthWeekday: "Monthly",
+            annually: "Annually",
+            weekdays: "Every weekday (Mon–Fri)",
+        };
+    }
+    const noon = new Date(
+        inputValuesToUtcIso(startDate, "12:00", settings.timeZone),
+    );
+    const weekdayName = new Intl.DateTimeFormat("en-US", {
+        timeZone: settings.timeZone,
+        weekday: "long",
+    }).format(noon);
+    const nth = ordinalWeekdayOfMonth(startDate);
+    const ordinalWord = ORDINAL_WORDS[nth] ?? `${nth}th`;
+    return {
+        daily: "Daily",
+        weekly: `Weekly on ${weekdayName}`,
+        monthlyNthWeekday: `Monthly on the ${ordinalWord} ${weekdayName}`,
+        annually: `Annually on ${formatMonthDay(noon, settings)}`,
+        weekdays: "Every weekday (Mon–Fri)",
+    };
+}
+
 /** Gutter width (px) reserved for the hourly grid's hour labels, shared by
  *  the header row above it so day columns line up between the two. */
 const GUTTER_WIDTH = 64;
@@ -104,6 +304,7 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
             endDate: dateInputValue(end, settings.timeZone),
             endTime: timeInputValue(end, settings.timeZone),
             allDay: false,
+            ...DEFAULT_REPEAT_STATE,
         };
     }
 
@@ -127,7 +328,15 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
         );
     }
 
-    function editEvent(event: CalendarEvent) {
+    function editEvent(clicked: CalendarEvent) {
+        // A clicked item may be a synthesized occurrence of a recurring
+        // series, not the stored row itself -- always edit the master's own
+        // start/end/rule, never the clicked occurrence's shifted date, or
+        // editing any occurrence but the first would silently move the
+        // whole series.
+        const event = clicked.instanceOf
+            ? (events.find((e) => e.id === clicked.instanceOf) ?? clicked)
+            : clicked;
         setDraft({
             id: event.id,
             title: event.title,
@@ -144,6 +353,11 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
             endDate: dateInputValue(new Date(event.endsAt), settings.timeZone),
             endTime: timeInputValue(new Date(event.endsAt), settings.timeZone),
             allDay: event.allDay,
+            ...repeatStateFromRule(
+                event.recurrenceRule,
+                event.startsAt,
+                settings.timeZone,
+            ),
         });
     }
 
@@ -185,8 +399,24 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                       settings.timeZone,
                   ),
             allDay: draft.allDay,
+            recurrenceRule: null as string | null,
         };
         if (new Date(event.endsAt) <= new Date(event.startsAt)) return;
+        event.recurrenceRule = buildRecurrenceRule(
+            draft.repeatPreset,
+            {
+                interval: draft.customInterval,
+                unit: draft.customUnit,
+                weekdays: draft.customWeekdays,
+            },
+            {
+                mode: draft.repeatEndMode,
+                date: draft.repeatEndDate,
+                count: draft.repeatCount,
+            },
+            new Date(event.startsAt),
+            settings.timeZone,
+        );
         const saved = draft.id
             ? await updateEvent(draft.id, event)
             : await addEvent(event);
@@ -198,14 +428,16 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
         if (await removeEvent(draft.id)) setDraft(null);
     }
 
-    // Overlap with the visible week, not just a start within it -- otherwise an
-    // event that began before this week but runs into it goes missing here too.
+    // Expands recurring masters into this week's concrete occurrences (and
+    // filters non-recurring events to the same overlap check as before) in
+    // one pass -- see expandRecurringEvents in lib/calendar.ts.
     const visibleWeekEnd = addDays(weekStart, 7);
-    const visibleEvents = events.filter((event) => {
-        const eventStart = new Date(event.startsAt);
-        const eventEnd = new Date(event.endsAt);
-        return eventStart < visibleWeekEnd && eventEnd > weekStart;
-    });
+    const visibleEvents = expandRecurringEvents(
+        events,
+        weekStart,
+        visibleWeekEnd,
+        settings.timeZone,
+    );
     const allDayLayout = layoutAllDayEvents(
         visibleEvents.filter((event) => event.allDay),
         days,
@@ -675,6 +907,290 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                     All day
                                 </span>
                             </label>
+                            {(() => {
+                                const repeatLabels = describeRepeatPresets(
+                                    draft.startDate,
+                                    settings,
+                                );
+                                return (
+                                    <>
+                                        <label className="block space-y-1">
+                                            <span className="text-xs font-semibold text-ink-soft">
+                                                Repeat
+                                            </span>
+                                            <select
+                                                value={draft.repeatPreset}
+                                                onChange={(event) =>
+                                                    setDraft({
+                                                        ...draft,
+                                                        repeatPreset: event
+                                                            .target
+                                                            .value as RepeatPreset,
+                                                    })
+                                                }
+                                                className="w-full rounded-xl border border-paper-edge bg-board/40 px-3 py-2 text-sm outline-none"
+                                            >
+                                                <option value="none">
+                                                    Does not repeat
+                                                </option>
+                                                <option value="daily">
+                                                    {repeatLabels.daily}
+                                                </option>
+                                                <option value="weekly">
+                                                    {repeatLabels.weekly}
+                                                </option>
+                                                <option value="monthlyNthWeekday">
+                                                    {
+                                                        repeatLabels.monthlyNthWeekday
+                                                    }
+                                                </option>
+                                                <option value="annually">
+                                                    {repeatLabels.annually}
+                                                </option>
+                                                <option value="weekdays">
+                                                    {repeatLabels.weekdays}
+                                                </option>
+                                                <option value="custom">
+                                                    Custom…
+                                                </option>
+                                            </select>
+                                        </label>
+
+                                        {draft.repeatPreset === "custom" && (
+                                            <div className="space-y-2">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs font-semibold text-ink-soft">
+                                                        Repeat every
+                                                    </span>
+                                                    <input
+                                                        type="number"
+                                                        min={1}
+                                                        value={
+                                                            draft.customInterval
+                                                        }
+                                                        onChange={(event) =>
+                                                            setDraft({
+                                                                ...draft,
+                                                                customInterval:
+                                                                    Math.max(
+                                                                        1,
+                                                                        Number(
+                                                                            event
+                                                                                .target
+                                                                                .value,
+                                                                        ) || 1,
+                                                                    ),
+                                                            })
+                                                        }
+                                                        className="w-16 rounded-xl border border-paper-edge bg-board/40 px-2 py-1.5 text-sm outline-none"
+                                                    />
+                                                    <select
+                                                        value={
+                                                            draft.customUnit
+                                                        }
+                                                        onChange={(event) =>
+                                                            setDraft({
+                                                                ...draft,
+                                                                customUnit: event
+                                                                    .target
+                                                                    .value as CustomRepeatUnit,
+                                                            })
+                                                        }
+                                                        className="rounded-xl border border-paper-edge bg-board/40 px-2 py-1.5 text-sm outline-none"
+                                                    >
+                                                        {(
+                                                            Object.keys(
+                                                                CUSTOM_UNIT_LABELS,
+                                                            ) as CustomRepeatUnit[]
+                                                        ).map((unit) => (
+                                                            <option
+                                                                key={unit}
+                                                                value={unit}
+                                                            >
+                                                                {draft.customInterval ===
+                                                                1
+                                                                    ? CUSTOM_UNIT_LABELS[
+                                                                          unit
+                                                                      ]
+                                                                          .singular
+                                                                    : CUSTOM_UNIT_LABELS[
+                                                                          unit
+                                                                      ]
+                                                                          .plural}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                                {draft.customUnit ===
+                                                    "week" && (
+                                                    <div className="flex gap-1">
+                                                        {WEEKDAY_TOGGLES.map(
+                                                            ({
+                                                                index,
+                                                                label,
+                                                            }) => {
+                                                                const active =
+                                                                    draft.customWeekdays.includes(
+                                                                        index,
+                                                                    );
+                                                                return (
+                                                                    <button
+                                                                        key={
+                                                                            index
+                                                                        }
+                                                                        type="button"
+                                                                        onClick={() =>
+                                                                            setDraft(
+                                                                                {
+                                                                                    ...draft,
+                                                                                    customWeekdays:
+                                                                                        active
+                                                                                            ? draft.customWeekdays.filter(
+                                                                                                  (
+                                                                                                      d,
+                                                                                                  ) =>
+                                                                                                      d !==
+                                                                                                      index,
+                                                                                              )
+                                                                                            : [
+                                                                                                  ...draft.customWeekdays,
+                                                                                                  index,
+                                                                                              ],
+                                                                                },
+                                                                            )
+                                                                        }
+                                                                        className={`h-7 w-7 rounded-full text-xs font-semibold hover:cursor-pointer ${
+                                                                            active
+                                                                                ? "bg-pin-todo text-ink"
+                                                                                : "border border-paper-edge text-ink-soft hover:bg-black/5"
+                                                                        }`}
+                                                                    >
+                                                                        {
+                                                                            label
+                                                                        }
+                                                                    </button>
+                                                                );
+                                                            },
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {draft.repeatPreset !== "none" && (
+                                            <div className="space-y-1.5">
+                                                <span className="text-xs font-semibold text-ink-soft">
+                                                    Ends
+                                                </span>
+                                                <div className="flex flex-wrap items-center gap-3 text-xs text-ink">
+                                                    <label className="flex items-center gap-1.5">
+                                                        <input
+                                                            type="radio"
+                                                            checked={
+                                                                draft.repeatEndMode ===
+                                                                "never"
+                                                            }
+                                                            onChange={() =>
+                                                                setDraft({
+                                                                    ...draft,
+                                                                    repeatEndMode:
+                                                                        "never",
+                                                                })
+                                                            }
+                                                            className="accent-pin-todo"
+                                                        />
+                                                        Never
+                                                    </label>
+                                                    <label className="flex items-center gap-1.5">
+                                                        <input
+                                                            type="radio"
+                                                            checked={
+                                                                draft.repeatEndMode ===
+                                                                "onDate"
+                                                            }
+                                                            onChange={() =>
+                                                                setDraft({
+                                                                    ...draft,
+                                                                    repeatEndMode:
+                                                                        "onDate",
+                                                                })
+                                                            }
+                                                            className="accent-pin-todo"
+                                                        />
+                                                        On
+                                                        <input
+                                                            type="date"
+                                                            value={
+                                                                draft.repeatEndDate
+                                                            }
+                                                            onChange={(
+                                                                event,
+                                                            ) =>
+                                                                setDraft({
+                                                                    ...draft,
+                                                                    repeatEndMode:
+                                                                        "onDate",
+                                                                    repeatEndDate:
+                                                                        event
+                                                                            .target
+                                                                            .value,
+                                                                })
+                                                            }
+                                                            className="rounded-lg border border-paper-edge bg-board/40 px-2 py-1 text-xs outline-none"
+                                                        />
+                                                    </label>
+                                                    <label className="flex items-center gap-1.5">
+                                                        <input
+                                                            type="radio"
+                                                            checked={
+                                                                draft.repeatEndMode ===
+                                                                "afterCount"
+                                                            }
+                                                            onChange={() =>
+                                                                setDraft({
+                                                                    ...draft,
+                                                                    repeatEndMode:
+                                                                        "afterCount",
+                                                                })
+                                                            }
+                                                            className="accent-pin-todo"
+                                                        />
+                                                        After
+                                                        <input
+                                                            type="number"
+                                                            min={1}
+                                                            value={
+                                                                draft.repeatCount
+                                                            }
+                                                            onChange={(
+                                                                event,
+                                                            ) =>
+                                                                setDraft({
+                                                                    ...draft,
+                                                                    repeatEndMode:
+                                                                        "afterCount",
+                                                                    repeatCount:
+                                                                        Math.max(
+                                                                            1,
+                                                                            Number(
+                                                                                event
+                                                                                    .target
+                                                                                    .value,
+                                                                            ) ||
+                                                                                1,
+                                                                        ),
+                                                                })
+                                                            }
+                                                            className="w-14 rounded-lg border border-paper-edge bg-board/40 px-2 py-1 text-xs outline-none"
+                                                        />
+                                                        occurrences
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </>
+                                );
+                            })()}
                             <label className="block space-y-1">
                                 <span className="text-xs font-semibold text-ink-soft">
                                     Description

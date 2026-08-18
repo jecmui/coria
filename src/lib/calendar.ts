@@ -1,3 +1,5 @@
+import { RRule } from "rrule";
+import type { Options as RRuleOptions } from "rrule";
 import type { CalendarEvent, CalendarSettings } from "../types/calendar";
 
 export const HOUR_HEIGHT = 56;
@@ -330,6 +332,252 @@ export function allDayBarWidth(
     gutterPx = 0,
 ): string {
     return `calc((100% - ${gutterPx}px) * ${(endCol - startCol + 1) / totalDays} - 4px)`;
+}
+
+// --- Recurrence -------------------------------------------------------
+
+/** RRULE weekday codes, indexed by the same convention as Date.getDay()
+ *  (0=Sunday..6=Saturday) -- NOT rrule's own internal weekday numbering
+ *  (which starts at Monday=0), so never index this with a value read back
+ *  out of the rrule library itself. */
+const RRULE_DAY_CODES = [
+    "SU",
+    "MO",
+    "TU",
+    "WE",
+    "TH",
+    "FR",
+    "SA",
+] as const;
+
+/** Date.getDay()-style weekday index (0=Sunday..6=Saturday) for a
+ *  "YYYY-MM-DD" value, computed via UTC-anchored construction so it can't
+ *  drift a day the way a locale/DST-sensitive local Date could. */
+export function weekdayIndexOfDateValue(dateValue: string): number {
+    const [year, month, day] = dateValue.split("-").map(Number);
+    return new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+}
+
+/** Which occurrence of its weekday `dateValue` is within its month (e.g. 3
+ *  for the third Tuesday), or -1 if it's the last occurrence of that
+ *  weekday in the month -- used both to build and to describe the "Monthly
+ *  on the same day" preset. -1 matters because a literal "5th Tuesday"
+ *  produces zero occurrences in most months; "last Tuesday" always fires. */
+export function ordinalWeekdayOfMonth(dateValue: string): number {
+    const [year, month, day] = dateValue.split("-").map(Number);
+    const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    return day + 7 > daysInMonth ? -1 : Math.ceil(day / 7);
+}
+
+/** Real UTC instant + timeZone -> a Date whose *UTC* getters equal the wall
+ *  -clock time in timeZone. This is rrule's expected convention for
+ *  dtstart/until/between() -- the opposite of this file's usual "local
+ *  setters" convention (see localWallTimeToUtcIso above). Every Date handed
+ *  to or read from rrule MUST go through this pair of functions, or
+ *  occurrences will silently drift by the timezone's UTC offset. */
+function toFloatingUtc(instant: Date, timeZone: string): Date {
+    const [year, month, day] = dateInputValue(instant, timeZone)
+        .split("-")
+        .map(Number);
+    const [hour, minute] = timeInputValue(instant, timeZone)
+        .split(":")
+        .map(Number);
+    return new Date(Date.UTC(year, month - 1, day, hour, minute, 0));
+}
+
+/** The inverse of toFloatingUtc -- one of rrule's floating-UTC occurrence
+ *  results back to a real UTC ISO instant. */
+function fromFloatingUtc(floating: Date, timeZone: string): string {
+    const wall = new Date(
+        floating.getUTCFullYear(),
+        floating.getUTCMonth(),
+        floating.getUTCDate(),
+        floating.getUTCHours(),
+        floating.getUTCMinutes(),
+        floating.getUTCSeconds(),
+        0,
+    );
+    return localWallTimeToUtcIso(wall, timeZone);
+}
+
+/** Reads the wall-clock "YYYY-MM-DD" date directly off a floating-UTC
+ *  Date's UTC getters -- used to read an RRULE UNTIL value back into a date
+ *  input's value without running it through a real timezone conversion,
+ *  since it's already floating, not a real instant (see toFloatingUtc). */
+export function floatingUtcToDateValue(date: Date): string {
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+}
+
+function formatFloatingUtcForRrule(floating: Date): string {
+    const pad = (value: number) => String(value).padStart(2, "0");
+    return (
+        `${floating.getUTCFullYear()}${pad(floating.getUTCMonth() + 1)}${pad(floating.getUTCDate())}` +
+        `T${pad(floating.getUTCHours())}${pad(floating.getUTCMinutes())}${pad(floating.getUTCSeconds())}`
+    );
+}
+
+export type RepeatPreset =
+    | "none"
+    | "daily"
+    | "weekly"
+    | "monthlyNthWeekday"
+    | "annually"
+    | "weekdays"
+    | "custom";
+
+export type CustomRepeatUnit = "day" | "week" | "month" | "year";
+
+export interface CustomRepeatOptions {
+    interval: number;
+    /** Date.getDay()-style indices (0=Sunday..6=Saturday), only meaningful
+     *  when unit is "week". */
+    weekdays: number[];
+    unit: CustomRepeatUnit;
+}
+
+export type RepeatEndMode = "never" | "onDate" | "afterCount";
+
+export interface RepeatEndOptions {
+    mode: RepeatEndMode;
+    /** "YYYY-MM-DD", used when mode is "onDate". */
+    date: string;
+    /** Used when mode is "afterCount". */
+    count: number;
+}
+
+const CUSTOM_UNIT_TO_FREQ: Record<CustomRepeatUnit, string> = {
+    day: "DAILY",
+    week: "WEEKLY",
+    month: "MONTHLY",
+    year: "YEARLY",
+};
+
+/** Builds a bare RFC 5545 RRULE value (no DTSTART -- `startsAt` is always
+ *  the series' anchor) from the repeat picker's draft state, or null for
+ *  "none". `startsAt` and `timeZone` are only needed to derive the
+ *  weekday/ordinal for the "weekly"/"monthlyNthWeekday" presets and the
+ *  floating-UTC UNTIL boundary -- see toFloatingUtc's doc comment above for
+ *  why that conversion matters. */
+export function buildRecurrenceRule(
+    preset: RepeatPreset,
+    custom: CustomRepeatOptions,
+    end: RepeatEndOptions,
+    startsAt: Date,
+    timeZone: string,
+): string | null {
+    if (preset === "none") return null;
+
+    const startDateValue = dateInputValue(startsAt, timeZone);
+    const parts: string[] = [];
+
+    if (preset === "daily") {
+        parts.push("FREQ=DAILY");
+    } else if (preset === "weekly") {
+        parts.push(
+            "FREQ=WEEKLY",
+            `BYDAY=${RRULE_DAY_CODES[weekdayIndexOfDateValue(startDateValue)]}`,
+        );
+    } else if (preset === "monthlyNthWeekday") {
+        const nth = ordinalWeekdayOfMonth(startDateValue);
+        const code = RRULE_DAY_CODES[weekdayIndexOfDateValue(startDateValue)];
+        parts.push("FREQ=MONTHLY", `BYDAY=${nth}${code}`);
+    } else if (preset === "annually") {
+        parts.push("FREQ=YEARLY");
+    } else if (preset === "weekdays") {
+        parts.push("FREQ=WEEKLY", "BYDAY=MO,TU,WE,TH,FR");
+    } else {
+        parts.push(`FREQ=${CUSTOM_UNIT_TO_FREQ[custom.unit]}`);
+        if (custom.interval > 1) parts.push(`INTERVAL=${custom.interval}`);
+        if (custom.unit === "week" && custom.weekdays.length > 0) {
+            const codes = [...custom.weekdays]
+                .sort((a, b) => a - b)
+                .map((day) => RRULE_DAY_CODES[day]);
+            parts.push(`BYDAY=${codes.join(",")}`);
+        }
+    }
+
+    if (end.mode === "onDate" && end.date) {
+        const [year, month, day] = end.date.split("-").map(Number);
+        const untilFloating = new Date(
+            Date.UTC(year, month - 1, day, 23, 59, 59),
+        );
+        parts.push(`UNTIL=${formatFloatingUtcForRrule(untilFloating)}`);
+    } else if (end.mode === "afterCount" && end.count > 0) {
+        parts.push(`COUNT=${end.count}`);
+    }
+
+    return parts.join(";");
+}
+
+/** Expands `events` (recurring or not) into concrete, visible instances for
+ *  `[rangeStart, rangeEnd)`, so callers never need their own overlap-filter
+ *  logic. A recurring event's stored startsAt/endsAt describe only its
+ *  first occurrence -- later ones are computed here from its
+ *  recurrenceRule, entirely at render time, and never persisted. Each
+ *  instance keeps the master's fields but gets a unique id (so multiple
+ *  visible occurrences of the same series don't collide as React keys) and
+ *  an `instanceOf` pointing back to the master's real id (so edit/delete
+ *  can resolve back to the whole series). A malformed recurrenceRule is
+ *  logged and skipped rather than crashing the render. */
+export function expandRecurringEvents(
+    events: CalendarEvent[],
+    rangeStart: Date,
+    rangeEnd: Date,
+    timeZone: string,
+): CalendarEvent[] {
+    const result: CalendarEvent[] = [];
+
+    for (const event of events) {
+        const start = new Date(event.startsAt);
+        const end = new Date(event.endsAt);
+
+        if (!event.recurrenceRule) {
+            if (start < rangeEnd && end > rangeStart) result.push(event);
+            continue;
+        }
+
+        const durationMs = end.getTime() - start.getTime();
+        // An occurrence starting just before rangeStart can still overlap
+        // it once its own duration is accounted for.
+        const queryFrom = new Date(rangeStart.getTime() - durationMs);
+
+        let occurrences: Date[];
+        try {
+            const parsedOptions = RRule.parseString(event.recurrenceRule);
+            const rule = new RRule({
+                ...parsedOptions,
+                dtstart: toFloatingUtc(start, timeZone),
+            } as Partial<RRuleOptions>);
+            occurrences = rule.between(
+                toFloatingUtc(queryFrom, timeZone),
+                toFloatingUtc(rangeEnd, timeZone),
+                true,
+            );
+        } catch (error) {
+            console.error(
+                "Failed to expand recurring event:",
+                event.id,
+                error,
+            );
+            continue;
+        }
+
+        for (const occurrence of occurrences) {
+            const occStartIso = fromFloatingUtc(occurrence, timeZone);
+            const occStart = new Date(occStartIso);
+            const occEnd = new Date(occStart.getTime() + durationMs);
+            if (occStart >= rangeEnd || occEnd <= rangeStart) continue;
+            result.push({
+                ...event,
+                id: `${event.id}::${occStartIso}`,
+                startsAt: occStartIso,
+                endsAt: occEnd.toISOString(),
+                instanceOf: event.id,
+            });
+        }
+    }
+
+    return result;
 }
 
 export interface AllDayDayInfo {

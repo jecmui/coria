@@ -301,3 +301,11 @@ alter table calendar_events
   add column source text not null default 'local',
   add column external_id text,
   add column all_day boolean not null default false;
+
+-- Recurrence: a recurring event is stored as a single row whose starts_at/
+-- ends_at describe its first occurrence; recurrence_rule holds a bare RFC
+-- 5545 RRULE value (no DTSTART line -- the row's own starts_at is the
+-- anchor). Null for non-recurring events. UNTIL/COUNT, when present, live
+-- inside this string per RFC 5545 -- no separate "ends" columns needed.
+alter table calendar_events
+  add column recurrence_rule text;

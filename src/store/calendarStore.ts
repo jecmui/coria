@@ -30,10 +30,11 @@ interface CalendarEventRow {
     all_day: boolean;
     source: string;
     external_id: string | null;
+    recurrence_rule: string | null;
 }
 
 const EVENT_COLUMNS =
-    "id, title, description, location, starts_at, ends_at, all_day, source, external_id";
+    "id, title, description, location, starts_at, ends_at, all_day, source, external_id, recurrence_rule";
 
 interface CalendarState {
     userId: string | null;
@@ -70,6 +71,7 @@ function rowToEvent(row: CalendarEventRow): CalendarEvent {
         allDay: row.all_day,
         source: row.source as CalendarEventSource,
         externalId: row.external_id,
+        recurrenceRule: row.recurrence_rule,
     };
 }
 
@@ -120,24 +122,42 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
         if (!userId) return;
         set({ loading: true, error: null });
 
-        // Fetch by overlap with [start, end), not just a starts_at within it --
-        // otherwise a multi-day event (or all-day event spanning several days)
-        // that began before `start` but continues into the range goes missing.
-        const { data, error } = await supabase
-            .from("calendar_events")
-            .select(EVENT_COLUMNS)
-            .lt("starts_at", end)
-            .gt("ends_at", start)
-            .order("starts_at", { ascending: true });
+        // Two separate queries, not one overlap filter: a recurring event's
+        // own stored starts_at/ends_at describe only its first occurrence,
+        // which can sit far outside [start, end) while its *expanded*
+        // occurrences (computed client-side in expandRecurringEvents) still
+        // fall inside it -- so recurring rows are fetched by starts_at
+        // alone, with no upper-bound on how long ago they began and no
+        // lower-bound from ends_at at all.
+        const [plain, recurring] = await Promise.all([
+            supabase
+                .from("calendar_events")
+                .select(EVENT_COLUMNS)
+                .is("recurrence_rule", null)
+                .lt("starts_at", end)
+                .gt("ends_at", start),
+            supabase
+                .from("calendar_events")
+                .select(EVENT_COLUMNS)
+                .not("recurrence_rule", "is", null)
+                .lt("starts_at", end),
+        ]);
 
-        if (error) {
-            console.error("Failed to load calendar events:", error.message);
-            set({ loading: false, error: error.message });
+        if (plain.error || recurring.error) {
+            const message =
+                plain.error?.message ?? recurring.error?.message ?? "";
+            console.error("Failed to load calendar events:", message);
+            set({ loading: false, error: message });
             return;
         }
 
+        const rows = [
+            ...(plain.data as CalendarEventRow[]),
+            ...(recurring.data as CalendarEventRow[]),
+        ].sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+
         set({
-            events: (data as CalendarEventRow[]).map(rowToEvent),
+            events: rows.map(rowToEvent),
             loading: false,
         });
     },
@@ -181,6 +201,7 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
                 all_day: event.allDay ?? false,
                 source: event.source ?? "local",
                 external_id: event.externalId ?? null,
+                recurrence_rule: event.recurrenceRule,
             })
             .select(EVENT_COLUMNS)
             .single();
@@ -211,6 +232,7 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
                 location: event.location,
                 starts_at: event.startsAt,
                 ends_at: event.endsAt,
+                recurrence_rule: event.recurrenceRule,
                 ...(event.allDay !== undefined && { all_day: event.allDay }),
                 ...(event.source !== undefined && { source: event.source }),
                 ...(event.externalId !== undefined && {
