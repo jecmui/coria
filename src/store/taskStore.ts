@@ -48,11 +48,17 @@ interface TaskState {
     /** "YYYY-MM-DD" (in todayClearSettings.timeZone) the automatic clear last ran, so
      *  it only fires once per day even if the app stays open or reopens after. */
     lastAutoClearDate: string | null;
+    /** When true, the Today widget dynamically keeps done tasks below
+     *  not-done ones instead of leaving them wherever they sit in the list.
+     *  Loaded/saved alongside todayClearSettings (same user_preferences
+     *  row), kept as its own field since it isn't a "clearing" setting. */
+    sortCompletedToBottom: boolean;
     loadTasks: (userId: string) => Promise<void>;
     loadConfirmTaskDelete: (userId: string) => Promise<void>;
     setConfirmTaskDelete: (value: boolean) => void;
     loadTodayClearSettings: (userId: string) => Promise<void>;
     saveTodayClearSettings: (settings: TodayClearSettings) => Promise<boolean>;
+    saveSortCompletedToBottom: (value: boolean) => Promise<boolean>;
     /** Removes today-focused tasks from Today (does not delete them). Returns the
      *  cleared task ids. */
     clearFocusToday: (scope: TodayClearScope) => string[];
@@ -76,6 +82,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     todayClearSettings: DEFAULT_TODAY_CLEAR_SETTINGS,
     todayClearSettingsLoading: false,
     todayClearSettingsError: null,
+    sortCompletedToBottom: false,
     lastAutoClearDate: null,
 
     loadTasks: async (userId) => {
@@ -130,7 +137,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         const { data, error } = await supabase
             .from("user_preferences")
             .select(
-                "today_clear_mode, today_clear_time, today_clear_time_zone, today_clear_scope, today_last_auto_clear_date",
+                "today_clear_mode, today_clear_time, today_clear_time_zone, today_clear_scope, today_last_auto_clear_date, today_sort_completed_to_bottom",
             )
             .eq("user_id", userId)
             .single();
@@ -163,6 +170,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
                     DEFAULT_TODAY_CLEAR_SETTINGS.scope,
             },
             lastAutoClearDate: data.today_last_auto_clear_date,
+            sortCompletedToBottom: data.today_sort_completed_to_bottom ?? false,
             todayClearSettingsLoading: false,
         });
     },
@@ -187,6 +195,25 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         }
 
         set({ todayClearSettings: settings });
+        return true;
+    },
+
+    saveSortCompletedToBottom: async (value) => {
+        const userId = get().userId;
+        if (!userId) return false;
+        const { error } = await supabase
+            .from("user_preferences")
+            .update({ today_sort_completed_to_bottom: value })
+            .eq("user_id", userId);
+
+        if (error) {
+            console.error(
+                "Failed to save Today sort setting:",
+                error.message,
+            );
+            return false;
+        }
+        set({ sortCompletedToBottom: value });
         return true;
     },
 
@@ -241,6 +268,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             todayClearSettingsLoading: false,
             todayClearSettingsError: null,
             lastAutoClearDate: null,
+            sortCompletedToBottom: false,
         }),
 
     addTask: (title, focusToday = false) => {

@@ -75,11 +75,42 @@ export const BoardSection = forwardRef<
         todayClearForm.mode === "manual" ||
         todayClearForm.time.trim().length > 0;
 
+    // ----- Today widget: sort completed tasks to the bottom -----
+    // Loaded together with todayClearSettings (same user_preferences row,
+    // same query), so it reuses that loading/synced state instead of its
+    // own -- it just isn't part of the TodayClearSettings type, since it
+    // isn't a clearing setting.
+    const storeSortCompletedToBottom = useTaskStore(
+        (s) => s.sortCompletedToBottom,
+    );
+    const saveStoreSortCompletedToBottom = useTaskStore(
+        (s) => s.saveSortCompletedToBottom,
+    );
+
+    const [sortCompletedToBottom, setSortCompletedToBottom] = useState(
+        () => storeSortCompletedToBottom,
+    );
+    const [savedSortCompletedToBottom, setSavedSortCompletedToBottom] =
+        useState(() => storeSortCompletedToBottom);
+
+    useEffect(() => {
+        if (todayClearLoading || todayClearSynced) return;
+        setSortCompletedToBottom(storeSortCompletedToBottom);
+        setSavedSortCompletedToBottom(storeSortCompletedToBottom);
+        // todayClearSynced already guards this from re-running after the
+        // initial load, same as the todayClearForm sync effect above.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [todayClearLoading, todayClearSynced, storeSortCompletedToBottom]);
+
+    const isSortCompletedToBottomDirty =
+        sortCompletedToBottom !== savedSortCompletedToBottom;
+
     const [boardError, setBoardError] = useState<string | null>(null);
     const [boardSuccess, setBoardSuccess] = useState<string | null>(null);
     const [boardSaving, setBoardSaving] = useState(false);
 
-    const isBoardDirty = isSnapToGridDirty || isTodayClearDirty;
+    const isBoardDirty =
+        isSnapToGridDirty || isTodayClearDirty || isSortCompletedToBottomDirty;
     const canSaveBoard =
         isBoardDirty &&
         !boardSaving &&
@@ -88,6 +119,7 @@ export const BoardSection = forwardRef<
     function discard() {
         setSnapToGrid(savedSnapToGrid);
         setTodayClearForm(savedTodayClearForm);
+        setSortCompletedToBottom(savedSortCompletedToBottom);
         setBoardError(null);
     }
 
@@ -118,6 +150,13 @@ export const BoardSection = forwardRef<
         if (isTodayClearDirty) {
             const saved = await saveStoreTodayClearSettings(todayClearForm);
             if (saved) setSavedTodayClearForm(todayClearForm);
+            else ok = false;
+        }
+        if (isSortCompletedToBottomDirty) {
+            const saved = await saveStoreSortCompletedToBottom(
+                sortCompletedToBottom,
+            );
+            if (saved) setSavedSortCompletedToBottom(sortCompletedToBottom);
             else ok = false;
         }
 
@@ -183,6 +222,19 @@ export const BoardSection = forwardRef<
                         Choose how the Today widget clears itself. Clearing
                         only removes tasks from Today -- it doesn't delete
                         them from your full task list.
+                    </p>
+                </div>
+
+                <div>
+                    <ToggleSwitch
+                        checked={sortCompletedToBottom}
+                        onChange={setSortCompletedToBottom}
+                        label="Sort completed tasks to the bottom"
+                    />
+                    <p className="mt-1.5 font-body text-xs text-ink-soft">
+                        When on, checking off a task in Today immediately
+                        moves it below your not-done tasks instead of leaving
+                        it in place.
                     </p>
                 </div>
 

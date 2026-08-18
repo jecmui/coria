@@ -51,9 +51,19 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
     const addTask = useTaskStore((s) => s.addTask);
     const toggleDone = useTaskStore((s) => s.toggleDone);
     const reorderFocusTasks = useTaskStore((s) => s.reorderFocusTasks);
+    const sortCompletedToBottom = useTaskStore((s) => s.sortCompletedToBottom);
     const focusTasks = [...tasks]
         .filter((t) => t.focusToday)
-        .sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt - b.createdAt);
+        .sort((a, b) => {
+            // Done tasks sink below not-done ones when the setting is on --
+            // checked as the primary sort key, so it dynamically applies the
+            // moment a task's done state changes, ahead of sortOrder/manual
+            // placement within each group.
+            if (sortCompletedToBottom && a.done !== b.done) {
+                return a.done ? 1 : -1;
+            }
+            return a.sortOrder - b.sortOrder || a.createdAt - b.createdAt;
+        });
     const {
         containerRef,
         displayItems: orderedFocusTasks,

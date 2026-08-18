@@ -309,3 +309,10 @@ alter table calendar_events
 -- inside this string per RFC 5545 -- no separate "ends" columns needed.
 alter table calendar_events
   add column recurrence_rule text;
+
+-- Today-widget sorting, edited from Settings > Board > Today alongside the
+-- clearing settings above. When on, the Today widget dynamically keeps done
+-- tasks below not-done ones (each group still ordered by sort_order) instead
+-- of leaving done tasks wherever they were in the list.
+alter table user_preferences
+  add column today_sort_completed_to_bottom boolean not null default false;
