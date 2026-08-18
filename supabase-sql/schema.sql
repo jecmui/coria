@@ -273,7 +273,21 @@ alter table profiles
   drop column appearance_color_pin_image,
   drop column appearance_color_pin_calendar;
 
--- Board movement preference, edited from Settings > Appearance. When on, the
+-- Board movement preference, edited from Settings > Board. When on, the
 -- board's Rnd widgets snap to the grid formed by the board-texture dots.
 alter table user_preferences
   add column snap_to_grid boolean not null default false;
+
+-- Today-widget clearing, edited from Settings > Board > Today. "manual" leaves
+-- clearing to right-clicking the Today widget; "automatic" also clears it on
+-- its own once a day at today_clear_time (in today_clear_time_zone), either
+-- every focused task or just the done ones per today_clear_scope.
+-- today_last_auto_clear_date records the last date the automatic clear ran
+-- (client-evaluated, since there's no backend scheduler) so it only fires
+-- once per day even across reloads.
+alter table user_preferences
+  add column today_clear_mode text not null default 'manual',
+  add column today_clear_time text not null default '18:00',
+  add column today_clear_time_zone text,
+  add column today_clear_scope text not null default 'completed',
+  add column today_last_auto_clear_date date;

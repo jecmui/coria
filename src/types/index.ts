@@ -90,3 +90,17 @@ export interface AppearanceSettings {
     /** When true, widgets snap to a grid on the board as they're dragged or resized. */
     snapToGrid: boolean;
 }
+
+export type TodayClearMode = "manual" | "automatic";
+export type TodayClearScope = "all" | "completed";
+
+export interface TodayClearSettings {
+    /** "manual" leaves clearing to right-clicking the Today widget; "automatic"
+     *  additionally clears it on its own every day at `time`. */
+    mode: TodayClearMode;
+    /** 24-hour wall-clock time ("HH:MM") the automatic clear runs at, in `timeZone`. */
+    time: string;
+    timeZone: string;
+    /** Whether the automatic clear removes every task from Today, or only the done ones. */
+    scope: TodayClearScope;
+}

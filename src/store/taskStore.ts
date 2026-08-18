@@ -1,6 +1,19 @@
 import { create } from "zustand";
 import { supabase } from "../lib/supabase";
-import type { Task } from "../types";
+import { dateInputValue, zonedDateTimeToUtcIso } from "../lib/calendar";
+import type {
+    Task,
+    TodayClearMode,
+    TodayClearScope,
+    TodayClearSettings,
+} from "../types";
+
+export const DEFAULT_TODAY_CLEAR_SETTINGS: TodayClearSettings = {
+    mode: "manual",
+    time: "18:00",
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+    scope: "completed",
+};
 
 interface TaskRow {
     id: string;
@@ -29,9 +42,23 @@ interface TaskState {
     loading: boolean;
     /** When false, "Delete task" skips its confirmation dialog. */
     confirmTaskDelete: boolean;
+    todayClearSettings: TodayClearSettings;
+    todayClearSettingsLoading: boolean;
+    todayClearSettingsError: string | null;
+    /** "YYYY-MM-DD" (in todayClearSettings.timeZone) the automatic clear last ran, so
+     *  it only fires once per day even if the app stays open or reopens after. */
+    lastAutoClearDate: string | null;
     loadTasks: (userId: string) => Promise<void>;
     loadConfirmTaskDelete: (userId: string) => Promise<void>;
     setConfirmTaskDelete: (value: boolean) => void;
+    loadTodayClearSettings: (userId: string) => Promise<void>;
+    saveTodayClearSettings: (settings: TodayClearSettings) => Promise<boolean>;
+    /** Removes today-focused tasks from Today (does not delete them). Returns the
+     *  cleared task ids. */
+    clearFocusToday: (scope: TodayClearScope) => string[];
+    /** Runs the scheduled automatic clear if it's due and hasn't already run today.
+     *  Safe to call anytime -- a no-op outside "automatic" mode or before its time. */
+    checkTodayAutoClear: () => void;
     clear: () => void;
     addTask: (title: string, focusToday?: boolean) => void;
     updateTask: (id: string, title: string) => void;
@@ -46,6 +73,10 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     userId: null,
     loading: false,
     confirmTaskDelete: true,
+    todayClearSettings: DEFAULT_TODAY_CLEAR_SETTINGS,
+    todayClearSettingsLoading: false,
+    todayClearSettingsError: null,
+    lastAutoClearDate: null,
 
     loadTasks: async (userId) => {
         set({ loading: true, userId });
@@ -94,7 +125,123 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             });
     },
 
-    clear: () => set({ tasks: [], userId: null, confirmTaskDelete: true }),
+    loadTodayClearSettings: async (userId) => {
+        set({ todayClearSettingsLoading: true, todayClearSettingsError: null });
+        const { data, error } = await supabase
+            .from("user_preferences")
+            .select(
+                "today_clear_mode, today_clear_time, today_clear_time_zone, today_clear_scope, today_last_auto_clear_date",
+            )
+            .eq("user_id", userId)
+            .single();
+
+        if (error) {
+            console.error(
+                "Failed to load Today clear settings:",
+                error.message,
+            );
+            set({
+                todayClearSettingsLoading: false,
+                todayClearSettingsError: error.message,
+            });
+            return;
+        }
+
+        set({
+            todayClearSettings: {
+                mode:
+                    (data.today_clear_mode as TodayClearMode) ??
+                    DEFAULT_TODAY_CLEAR_SETTINGS.mode,
+                time:
+                    data.today_clear_time ??
+                    DEFAULT_TODAY_CLEAR_SETTINGS.time,
+                timeZone:
+                    data.today_clear_time_zone ??
+                    DEFAULT_TODAY_CLEAR_SETTINGS.timeZone,
+                scope:
+                    (data.today_clear_scope as TodayClearScope) ??
+                    DEFAULT_TODAY_CLEAR_SETTINGS.scope,
+            },
+            lastAutoClearDate: data.today_last_auto_clear_date,
+            todayClearSettingsLoading: false,
+        });
+    },
+
+    saveTodayClearSettings: async (settings) => {
+        const userId = get().userId;
+        if (!userId) return false;
+        set({ todayClearSettingsError: null });
+        const { error } = await supabase
+            .from("user_preferences")
+            .update({
+                today_clear_mode: settings.mode,
+                today_clear_time: settings.time,
+                today_clear_time_zone: settings.timeZone,
+                today_clear_scope: settings.scope,
+            })
+            .eq("user_id", userId);
+
+        if (error) {
+            set({ todayClearSettingsError: error.message });
+            return false;
+        }
+
+        set({ todayClearSettings: settings });
+        return true;
+    },
+
+    clearFocusToday: (scope) => {
+        const taskIds = get()
+            .tasks.filter((t) => t.focusToday && (scope === "all" || t.done))
+            .map((t) => t.id);
+        taskIds.forEach((id) => get().toggleFocusToday(id));
+        return taskIds;
+    },
+
+    checkTodayAutoClear: () => {
+        const { userId, todayClearSettings, lastAutoClearDate } = get();
+        if (!userId || todayClearSettings.mode !== "automatic") return;
+
+        const [hour, minute] = todayClearSettings.time.split(":").map(Number);
+        if (Number.isNaN(hour) || Number.isNaN(minute)) return;
+
+        const now = new Date();
+        const scheduledIso = zonedDateTimeToUtcIso(
+            now,
+            hour,
+            minute,
+            todayClearSettings.timeZone,
+        );
+        if (now.getTime() < new Date(scheduledIso).getTime()) return;
+
+        const todayKey = dateInputValue(now, todayClearSettings.timeZone);
+        if (lastAutoClearDate === todayKey) return;
+
+        get().clearFocusToday(todayClearSettings.scope);
+        set({ lastAutoClearDate: todayKey });
+        supabase
+            .from("user_preferences")
+            .update({ today_last_auto_clear_date: todayKey })
+            .eq("user_id", userId)
+            .then(({ error }) => {
+                if (error)
+                    console.error(
+                        "Failed to record auto-clear date:",
+                        error.message,
+                    );
+            });
+    },
+
+    clear: () =>
+        set({
+            tasks: [],
+            userId: null,
+            confirmTaskDelete: true,
+            todayClearSettings: DEFAULT_TODAY_CLEAR_SETTINGS,
+            todayClearSettingsLoading: false,
+            todayClearSettingsError: null,
+            lastAutoClearDate: null,
+        }),
 
     addTask: (title, focusToday = false) => {
         const { userId, tasks } = get();

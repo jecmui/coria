@@ -34,6 +34,9 @@ export default function App() {
 
     const loadTasks = useTaskStore((s) => s.loadTasks);
     const loadConfirmTaskDelete = useTaskStore((s) => s.loadConfirmTaskDelete);
+    const loadTodayClearSettings = useTaskStore(
+        (s) => s.loadTodayClearSettings,
+    );
     const clearTasks = useTaskStore((s) => s.clear);
     const loadWidgets = useBoardStore((s) => s.loadWidgets);
     const loadPomodoroSettings = useBoardStore((s) => s.loadPomodoroSettings);
@@ -52,6 +55,9 @@ export default function App() {
         if (user) {
             loadTasks(user.id);
             loadConfirmTaskDelete(user.id);
+            loadTodayClearSettings(user.id).then(() => {
+                useTaskStore.getState().checkTodayAutoClear();
+            });
             loadWidgets(user.id);
             loadPomodoroSettings(user.id);
             loadCalendar(user.id);
@@ -65,6 +71,16 @@ export default function App() {
         // Re-run whenever the logged-in user changes (login, logout, or switching accounts)
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id]);
+
+    // The Today widget's automatic clear has no backend scheduler, so it's
+    // evaluated here on a timer while the app is open, in addition to the
+    // catch-up check right after settings load above.
+    useEffect(() => {
+        const interval = window.setInterval(() => {
+            useTaskStore.getState().checkTodayAutoClear();
+        }, 60_000);
+        return () => window.clearInterval(interval);
+    }, []);
 
     // Keep the live CSS variables in sync with the saved appearance settings,
     // and with the OS color scheme while "System Default" is selected (this
@@ -222,6 +238,7 @@ export default function App() {
                                     [
                                         ["account", "Account"],
                                         ["preferences", "Appearance"],
+                                        ["board", "Board"],
                                         ["pomodoro", "Pomodoro"],
                                         ["calendar", "Calendar"],
                                     ] as const

@@ -62,6 +62,7 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
     } = useDragReorder(focusTasks, reorderFocusTasks);
     const updateTask = useTaskStore((s) => s.updateTask);
     const toggleFocusToday = useTaskStore((s) => s.toggleFocusToday);
+    const clearFocusToday = useTaskStore((s) => s.clearFocusToday);
     const removeTask = useTaskStore((s) => s.removeTask);
     const confirmTaskDelete = useTaskStore((s) => s.confirmTaskDelete);
     const setConfirmTaskDelete = useTaskStore((s) => s.setConfirmTaskDelete);
@@ -245,18 +246,16 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
     }
 
     function handleClearCompleted() {
-        const taskIds = focusTasks.filter((t) => t.done).map((t) => t.id);
+        const taskIds = clearFocusToday("completed");
         if (taskIds.length === 0) return;
-        taskIds.forEach((taskId) => toggleFocusToday(taskId));
         setLastClear(taskIds);
         closeMenu();
         setSwipedTaskId(null);
     }
 
     function handleClearAll() {
-        const taskIds = focusTasks.map((t) => t.id);
+        const taskIds = clearFocusToday("all");
         if (taskIds.length === 0) return;
-        taskIds.forEach((taskId) => toggleFocusToday(taskId));
         setLastClear(taskIds);
         closeMenu();
         setSwipedTaskId(null);
