@@ -220,7 +220,7 @@ export const CalendarWidget = forwardRef<
                 </button>
                 {days.map((day, index) => (
                     <div
-                        key={day.toISOString()}
+                        key={startOfDay(day).toISOString()}
                         className={`min-w-0 flex-1 border-paper-edge px-2 pb-2 text-center ${index === days.length - 1 ? "" : "border-r"}`}
                     >
                         <p className="text-[10px] font-semibold uppercase text-ink-soft">
@@ -290,7 +290,7 @@ export const CalendarWidget = forwardRef<
                     );
                     return (
                         <div
-                            key={day.toISOString()}
+                            key={startOfDay(day).toISOString()}
                             className={`min-w-0 flex-1 space-y-1 overflow-hidden border-paper-edge p-1.5 ${index === days.length - 1 ? "" : "border-r"}`}
                         >
                             {dayEvents.slice(0, 5).map((event) => (

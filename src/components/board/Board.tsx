@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import { Rnd } from "react-rnd";
 import { useBoardStore } from "../../store/boardStore";
 import { useAppearanceStore } from "../../store/appearanceStore";
+import { ContextMenu } from "../ContextMenu";
 import { WidgetShell } from "./WidgetShell";
 import { TodoWidget } from "../widgets/TodoWidget";
 import { NoteWidget } from "../widgets/NoteWidget";
@@ -42,6 +44,11 @@ function snapToGridValue(value: number) {
     return Math.round(value / GRID_SIZE) * GRID_SIZE;
 }
 
+// How close (in px) a second right-click has to land to the currently open
+// board menu's position to count as "the same spot" and fall through to the
+// browser's native context menu, rather than moving the menu.
+const RIGHT_CLICK_SAME_SPOT_PX = 6;
+
 interface BoardProps {
     onOpenFullList: () => void;
     onOpenCalendar: () => void;
@@ -53,9 +60,14 @@ export function Board({ onOpenFullList, onOpenCalendar }: BoardProps) {
     const removeWidget = useBoardStore((s) => s.removeWidget);
     const bringToFront = useBoardStore((s) => s.bringToFront);
     const snapToGrid = useAppearanceStore((s) => s.settings.snapToGrid);
+    const toggleSnapToGrid = useAppearanceStore((s) => s.toggleSnapToGrid);
     const [isMobile, setIsMobile] = useState(() =>
         typeof window !== "undefined" ? window.innerWidth < 768 : false,
     );
+    const [boardMenu, setBoardMenu] = useState<{ x: number; y: number } | null>(
+        null,
+    );
+    const boardRef = useRef<HTMLDivElement>(null);
     // Lifted out of CalendarWidget so its "Today" jump-back control can live
     // in the shared widget title bar instead of the widget's own content.
     const calendarWidgetRefs = useRef<
@@ -106,6 +118,38 @@ export function Board({ onOpenFullList, onOpenCalendar }: BoardProps) {
         // Only re-run when the setting itself flips, not on every widget change.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [snapToGrid]);
+
+    function handleBoardContextMenu(event: ReactMouseEvent) {
+        const target = event.target as HTMLElement;
+        if (target.closest("[data-context-menu-owner]")) {
+            // The widget is about to open its own context menu here -- close
+            // ours first so the two are never open at the same time.
+            setBoardMenu(null);
+            return;
+        }
+
+        // A second right-click in roughly the same spot as the currently
+        // open menu closes it and falls through to the browser's native
+        // context menu, instead of reopening ours -- a right-click
+        // elsewhere on the board just moves the menu to the new spot.
+        const sameSpotAsOpenMenu =
+            boardMenu !== null &&
+            Math.abs(event.clientX - boardMenu.x) <= RIGHT_CLICK_SAME_SPOT_PX &&
+            Math.abs(event.clientY - boardMenu.y) <= RIGHT_CLICK_SAME_SPOT_PX;
+
+        if (event.shiftKey || sameSpotAsOpenMenu) {
+            setBoardMenu(null);
+            return;
+        }
+
+        event.preventDefault();
+        setBoardMenu({ x: event.clientX, y: event.clientY });
+    }
+
+    function handleToggleSnapToGrid() {
+        void toggleSnapToGrid();
+        setBoardMenu(null);
+    }
 
     const renderWidgetContent = (
         widgetId: string,
@@ -196,7 +240,11 @@ export function Board({ onOpenFullList, onOpenCalendar }: BoardProps) {
     }
 
     return (
-        <div className="board-texture relative z-0 h-full w-full overflow-auto">
+        <div
+            ref={boardRef}
+            className="board-texture relative z-0 h-full w-full overflow-auto"
+            onContextMenu={handleBoardContextMenu}
+        >
             {widgets.map((widget) => (
                 <Rnd
                     key={widget.id}
@@ -261,6 +309,23 @@ export function Board({ onOpenFullList, onOpenCalendar }: BoardProps) {
                     </WidgetShell>
                 </Rnd>
             ))}
+
+            {boardMenu && (
+                <ContextMenu
+                    x={boardMenu.x}
+                    y={boardMenu.y}
+                    onClose={() => setBoardMenu(null)}
+                    boundaryRef={boardRef}
+                    items={[
+                        {
+                            key: "snap-to-grid",
+                            label: "Snap to grid",
+                            checked: snapToGrid,
+                            onSelect: handleToggleSnapToGrid,
+                        },
+                    ]}
+                />
+            )}
         </div>
     );
 }

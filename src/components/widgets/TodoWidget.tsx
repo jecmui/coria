@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { MouseEvent, PointerEvent, RefObject } from "react";
 import { useTaskStore } from "../../store/taskStore";
+import { useAppearanceStore } from "../../store/appearanceStore";
 import { useDragReorder } from "../../lib/useDragReorder";
 import { ContextMenu } from "../ContextMenu";
 import type { ContextMenuItem } from "../ContextMenu";
@@ -76,6 +77,8 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
     const removeTask = useTaskStore((s) => s.removeTask);
     const confirmTaskDelete = useTaskStore((s) => s.confirmTaskDelete);
     const setConfirmTaskDelete = useTaskStore((s) => s.setConfirmTaskDelete);
+    const snapToGrid = useAppearanceStore((s) => s.settings.snapToGrid);
+    const toggleSnapToGrid = useAppearanceStore((s) => s.toggleSnapToGrid);
     const [draft, setDraft] = useState("");
     const [isAdding, setIsAdding] = useState(false);
     const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
@@ -271,6 +274,11 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
         setSwipedTaskId(null);
     }
 
+    function handleToggleSnapToGrid() {
+        void toggleSnapToGrid();
+        closeMenu();
+    }
+
     function handleSwipeStart(event: PointerEvent, taskId: string) {
         if (event.pointerType === "mouse") return;
         swipeStartRef.current = {
@@ -305,6 +313,7 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
     return (
         <div
             ref={rootRef}
+            data-context-menu-owner
             onContextMenu={handleWidgetContextMenu}
             className="flex h-full flex-col"
         >
@@ -546,6 +555,12 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
                             onSelect: handleClearAll,
                         },
                     ];
+                    const snapToGridItem: ContextMenuItem = {
+                        key: "snap-to-grid",
+                        label: "Snap to grid",
+                        checked: snapToGrid,
+                        onSelect: handleToggleSnapToGrid,
+                    };
                     const items: ContextMenuItem[] =
                         menu.kind === "task"
                             ? [
@@ -563,8 +578,9 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
                                           handleDeleteTask(menu.taskId),
                                   },
                                   ...clearItems,
+                                  snapToGridItem,
                               ]
-                            : clearItems;
+                            : [...clearItems, snapToGridItem];
 
                     return (
                         <ContextMenu

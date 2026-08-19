@@ -10,6 +10,7 @@ interface AppearanceState {
     settingsError: string | null;
     load: (userId: string) => Promise<void>;
     saveSettings: (settings: AppearanceSettings) => Promise<boolean>;
+    toggleSnapToGrid: () => Promise<boolean>;
     clear: () => void;
 }
 
@@ -90,6 +91,11 @@ export const useAppearanceStore = create<AppearanceState>((set, get) => ({
 
         set({ settings });
         return true;
+    },
+
+    toggleSnapToGrid: async () => {
+        const { settings, saveSettings } = get();
+        return saveSettings({ ...settings, snapToGrid: !settings.snapToGrid });
     },
 
     clear: () =>

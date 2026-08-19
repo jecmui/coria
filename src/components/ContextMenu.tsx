@@ -9,6 +9,8 @@ export interface ContextMenuItem {
     disabled?: boolean;
     /** Visually distinguishes destructive, irreversible actions (e.g. permanent deletion). */
     danger?: boolean;
+    /** Renders a checkmark next to the label -- for toggle-style options. */
+    checked?: boolean;
 }
 
 interface ContextMenuProps {
@@ -101,11 +103,12 @@ export function ContextMenu({ x, y, items, onClose, boundaryRef }: ContextMenuPr
                     type="button"
                     disabled={item.disabled}
                     onClick={item.onSelect}
-                    className={`rounded-lg px-3 py-2 text-left font-body text-xs font-medium transition hover:cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent hover:bg-black/5 ${
+                    className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-left font-body text-xs font-medium transition hover:cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent hover:bg-black/5 ${
                         item.danger ? "text-pin-timer" : "text-ink"
                     }`}
                 >
-                    {item.label}
+                    <span>{item.label}</span>
+                    {item.checked && <span aria-hidden="true">✓</span>}
                 </button>
             ))}
         </div>,
