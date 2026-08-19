@@ -28,9 +28,14 @@ type Mode =
     | "requestPasswordReset"
     | "resetPassword";
 
-export function AuthScreen() {
+interface AuthScreenProps {
+    initialMode?: "signin" | "signup";
+    onBack?: () => void;
+}
+
+export function AuthScreen({ initialMode = "signin", onBack }: AuthScreenProps = {}) {
     const { signIn } = useAuth();
-    const [mode, setMode] = useState<Mode>("signin");
+    const [mode, setMode] = useState<Mode>(initialMode);
 
     const [firstName, setFirstName] = useState("");
     const [email, setEmail] = useState("");
@@ -484,8 +489,18 @@ export function AuthScreen() {
             <form
                 onSubmit={handleSubmit}
                 noValidate
-                className="w-full max-w-sm rounded-lg border border-paper-edge bg-paper p-6 shadow-[0_8px_24px_rgba(0,0,0,0.35)]"
+                className={`relative w-full max-w-sm rounded-lg border border-paper-edge bg-paper p-6 shadow-[0_8px_24px_rgba(0,0,0,0.35)] ${onBack ? "pt-12" : ""}`}
             >
+                {onBack && (
+                    <button
+                        type="button"
+                        onClick={onBack}
+                        className="absolute left-4 top-4 text-xs font-medium text-ink-soft hover:text-ink hover:cursor-pointer"
+                    >
+                        ← Back
+                    </button>
+                )}
+
                 <h1 className="mb-1 font-display text-2xl font-semibold text-ink">
                     {mode === "signin" ? "welcome back :)" : "create account"}
                 </h1>

@@ -9,6 +9,7 @@ import {
 } from "./components/SettingsPage";
 import { useAuth } from "./auth/AuthContext";
 import { AuthScreen } from "./auth/AuthScreen";
+import { LandingPage } from "./auth/LandingPage";
 import { useTaskStore } from "./store/taskStore";
 import { useBoardStore } from "./store/boardStore";
 import { useCalendarStore } from "./store/calendarStore";
@@ -25,6 +26,10 @@ type View = "board" | "tasks" | "calendar" | "settings";
 export default function App() {
     const { user, loading, signOut } = useAuth();
     const firstName = user?.user_metadata?.first_name as string | undefined;
+    const [showLanding, setShowLanding] = useState(true);
+    const [authInitialMode, setAuthInitialMode] = useState<
+        "signin" | "signup"
+    >("signin");
     const [view, setView] = useState<View>("board");
     const [navOpen, setNavOpen] = useState(false);
     const [settingsSection, setSettingsSection] =
@@ -133,7 +138,26 @@ export default function App() {
     }
 
     if (!user) {
-        return <AuthScreen />;
+        if (showLanding) {
+            return (
+                <LandingPage
+                    onGetStarted={() => {
+                        setAuthInitialMode("signup");
+                        setShowLanding(false);
+                    }}
+                    onSignIn={() => {
+                        setAuthInitialMode("signin");
+                        setShowLanding(false);
+                    }}
+                />
+            );
+        }
+        return (
+            <AuthScreen
+                initialMode={authInitialMode}
+                onBack={() => setShowLanding(true)}
+            />
+        );
     }
 
     if (dataLoading) {
