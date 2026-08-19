@@ -16,14 +16,19 @@ import type {
  *  specific value, regardless of what a caller passes), never something a
  *  caller should set itself. `calendarId` defaults to the user's primary
  *  calendar on creation (see addEvent) since there's no calendar picker in
- *  the UI yet. */
+ *  the UI yet. `externalRaw` (READY-05) is the same "leave untouched"
+ *  category as allDay/source/externalId: the local edit UI never passes
+ *  it, so updateEvent's conditional payload omits the column entirely
+ *  rather than clobbering it back to null -- see mergeGoogleEventPatch in
+ *  lib/calendar.ts for why that matters. */
 type OptionalEventFields =
     | "allDay"
     | "source"
     | "externalId"
     | "dirty"
     | "eventTimeZone"
-    | "calendarId";
+    | "calendarId"
+    | "externalRaw";
 
 export const DEFAULT_CALENDAR_SETTINGS: CalendarSettings = {
     weekStart: 0,
@@ -48,10 +53,11 @@ interface CalendarEventRow {
     dirty: boolean;
     event_time_zone: string | null;
     updated_at: string;
+    external_raw: Record<string, unknown> | null;
 }
 
 const EVENT_COLUMNS =
-    "id, calendar_id, title, description, location, starts_at, ends_at, all_day, source, external_id, recurrence_rule, dirty, event_time_zone, updated_at";
+    "id, calendar_id, title, description, location, starts_at, ends_at, all_day, source, external_id, recurrence_rule, dirty, event_time_zone, updated_at, external_raw";
 
 interface CalendarRow {
     id: string;
@@ -85,10 +91,11 @@ interface EventExceptionRow {
     ends_at: string | null;
     all_day: boolean | null;
     external_id: string | null;
+    external_raw: Record<string, unknown> | null;
 }
 
 const EXCEPTION_COLUMNS =
-    "id, master_event_id, original_start_time, is_cancelled, title, description, location, starts_at, ends_at, all_day, external_id";
+    "id, master_event_id, original_start_time, is_cancelled, title, description, location, starts_at, ends_at, all_day, external_id, external_raw";
 
 function rowToException(row: EventExceptionRow): EventException {
     return {
@@ -103,6 +110,7 @@ function rowToException(row: EventExceptionRow): EventException {
         endsAt: row.ends_at,
         allDay: row.all_day,
         externalId: row.external_id,
+        externalRaw: row.external_raw,
     };
 }
 
@@ -176,6 +184,7 @@ function rowToEvent(row: CalendarEventRow): CalendarEvent {
         dirty: row.dirty,
         eventTimeZone: row.event_time_zone,
         updatedAt: row.updated_at,
+        externalRaw: row.external_raw,
     };
 }
 
@@ -380,6 +389,9 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
                 // own time zone") unless a caller explicitly provides
                 // Google's own per-event time zone -- see expandRecurringEvents.
                 event_time_zone: event.eventTimeZone ?? null,
+                // A freshly created local event has no Google data to hold
+                // onto yet -- see mergeGoogleEventPatch in lib/calendar.ts.
+                external_raw: event.externalRaw ?? null,
             })
             .select(EVENT_COLUMNS)
             .single();
@@ -428,6 +440,12 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
                 }),
                 ...(event.calendarId !== undefined && {
                     calendar_id: event.calendarId,
+                }),
+                // READY-05: never included by the local edit UI, so this
+                // column is simply omitted from the update -- left exactly
+                // as it was, not clobbered back to null.
+                ...(event.externalRaw !== undefined && {
+                    external_raw: event.externalRaw,
                 }),
             })
             .eq("id", id);

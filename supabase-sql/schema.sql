@@ -485,3 +485,19 @@ with check (auth.uid() = user_id);
 create trigger calendar_event_exceptions_set_updated_at
   before update on calendar_event_exceptions
   for each row execute function public.set_updated_at();
+
+-- READY-05: holds each event's (or exception's) last-known raw Google
+-- Calendar API object verbatim -- attendees, reminders, conferenceData,
+-- colorId, visibility, and anything else Coria's own schema doesn't have a
+-- column for. Null for locally-created rows, since there's nothing to hold
+-- yet. Only ever refreshed by a future pull; a local edit through Coria
+-- only ever touches the columns above (title, starts_at, ...), never this
+-- one, so it's never included in a local update's payload and rides
+-- through untouched -- see mergeGoogleEventPatch in lib/calendar.ts for how
+-- a future push is meant to merge Coria's own changes back into it instead
+-- of overwriting the whole event with only what Coria tracks.
+alter table calendar_events
+  add column external_raw jsonb;
+
+alter table calendar_event_exceptions
+  add column external_raw jsonb;

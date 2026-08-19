@@ -40,6 +40,16 @@ export interface CalendarEvent {
      *  regardless, so this only matters for expanding recurrenceRule --
      *  see expandRecurringEvents. */
     eventTimeZone: string | null;
+    /** READY-05: this event's last-known raw Google Calendar API object,
+     *  verbatim -- attendees, reminders, conferenceData, colorId,
+     *  visibility, and anything else Coria's schema doesn't have a column
+     *  for. Null for a locally-created event. A local edit never touches
+     *  this field (see updateEvent in calendarStore.ts), so it survives
+     *  edits untouched until a future pull refreshes it -- see
+     *  mergeGoogleEventPatch in lib/calendar.ts for how a future push
+     *  merges Coria's own changes into it instead of overwriting the whole
+     *  event with only what Coria tracks. */
+    externalRaw: Record<string, unknown> | null;
     /** Two-way sync groundwork: true when this event's local state hasn't
      *  been pushed to its external provider yet (set on every local
      *  create/edit/delete). Always true for a purely local event with no
@@ -91,6 +101,10 @@ export interface EventException {
     endsAt: string | null;
     allDay: boolean | null;
     externalId: string | null;
+    /** Same READY-05 groundwork as CalendarEvent.externalRaw above -- an
+     *  exception is itself a syncable Google event once it has an
+     *  externalId, so it needs the same verbatim-hold-and-merge treatment. */
+    externalRaw: Record<string, unknown> | null;
 }
 
 export interface CalendarSettings {

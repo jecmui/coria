@@ -851,3 +851,22 @@ export function resolveEventConflict(
         ? "local"
         : "remote";
 }
+
+/** READY-05 policy: when pushing a locally-edited event to Google, preserve
+ *  every field Coria doesn't understand (attendees, reminders,
+ *  conferenceData, colorId, visibility, and anything else not present in
+ *  `patch`) verbatim from the event's last-known raw Google object
+ *  (CalendarEvent.externalRaw / EventException.externalRaw), instead of
+ *  overwriting the whole event with only what Coria itself tracks. `patch`
+ *  is just the fields a local edit actually changed, already shaped the
+ *  way Google's Events API expects them (e.g. `summary`, `start`, `end`) --
+ *  building that shape is a future push implementation's job, not this
+ *  function's. Not yet called anywhere -- there's no push code yet -- but
+ *  the decision needs to live somewhere concrete instead of only on paper,
+ *  same as resolveEventConflict above. */
+export function mergeGoogleEventPatch(
+    externalRaw: Record<string, unknown> | null,
+    patch: Record<string, unknown>,
+): Record<string, unknown> {
+    return { ...(externalRaw ?? {}), ...patch };
+}
