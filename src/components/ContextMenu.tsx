@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import type { RefObject } from "react";
 
@@ -11,6 +11,8 @@ export interface ContextMenuItem {
     danger?: boolean;
     /** Renders a checkmark next to the label -- for toggle-style options. */
     checked?: boolean;
+    /** Renders a thin divider above this item, to set it apart from the group before it. */
+    divider?: boolean;
 }
 
 interface ContextMenuProps {
@@ -29,6 +31,7 @@ const MENU_WIDTH = 180;
 // the menu on-screen; only needs to be close, not exact.
 const ITEM_HEIGHT = 36;
 const MENU_PADDING = 8;
+const DIVIDER_HEIGHT = 9;
 
 export function ContextMenu({ x, y, items, onClose, boundaryRef }: ContextMenuProps) {
     const menuRef = useRef<HTMLDivElement>(null);
@@ -76,7 +79,11 @@ export function ContextMenu({ x, y, items, onClose, boundaryRef }: ContextMenuPr
         };
     }, [onClose, boundaryRef]);
 
-    const estimatedHeight = items.length * ITEM_HEIGHT + MENU_PADDING;
+    const dividerCount = items.filter((item) => item.divider).length;
+    const estimatedHeight =
+        items.length * ITEM_HEIGHT +
+        dividerCount * DIVIDER_HEIGHT +
+        MENU_PADDING;
 
     // Portalled: callers often live inside a transformed ancestor (e.g. a
     // react-rnd wrapper), which would otherwise anchor fixed positioning to
@@ -98,18 +105,25 @@ export function ContextMenu({ x, y, items, onClose, boundaryRef }: ContextMenuPr
             }}
         >
             {items.map((item) => (
-                <button
-                    key={item.key}
-                    type="button"
-                    disabled={item.disabled}
-                    onClick={item.onSelect}
-                    className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-left font-body text-xs font-medium transition hover:cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent hover:bg-black/5 ${
-                        item.danger ? "text-pin-timer" : "text-ink"
-                    }`}
-                >
-                    <span>{item.label}</span>
-                    {item.checked && <span aria-hidden="true">✓</span>}
-                </button>
+                <Fragment key={item.key}>
+                    {item.divider && (
+                        <div
+                            className="my-1 h-px bg-paper-edge"
+                            aria-hidden="true"
+                        />
+                    )}
+                    <button
+                        type="button"
+                        disabled={item.disabled}
+                        onClick={item.onSelect}
+                        className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-left font-body text-xs font-medium transition hover:cursor-pointer disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent hover:bg-black/5 ${
+                            item.danger ? "text-pin-timer" : "text-ink"
+                        }`}
+                    >
+                        <span>{item.label}</span>
+                        {item.checked && <span aria-hidden="true">✓</span>}
+                    </button>
+                </Fragment>
             ))}
         </div>,
         document.body,

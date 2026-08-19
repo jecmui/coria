@@ -574,6 +574,9 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
                         label: "Snap to grid",
                         checked: snapToGrid,
                         onSelect: handleToggleSnapToGrid,
+                        // Sets this board-wide action apart from the
+                        // widget-specific actions above it.
+                        divider: true,
                     };
                     const items: ContextMenuItem[] =
                         menu.kind === "task"
