@@ -1,7 +1,22 @@
 export type CalendarEventSource = "local" | "google";
 
+/** One of a user's calendars (multi-calendar groundwork for Google Calendar
+ *  sync, where an account can have several). Every user has exactly one
+ *  isPrimary calendar, auto-created at signup, which is where an event lands
+ *  when no calendar is explicitly chosen. externalCalendarId maps this row
+ *  to a synced provider calendar, null for a purely local one. */
+export interface Calendar {
+    id: string;
+    name: string;
+    color: string | null;
+    isPrimary: boolean;
+    externalCalendarId: string | null;
+}
+
 export interface CalendarEvent {
     id: string;
+    /** The calendar this event belongs to -- see Calendar above. */
+    calendarId: string;
     title: string;
     description: string;
     location: string;
@@ -30,11 +45,52 @@ export interface CalendarEvent {
      *  create/edit/delete). Always true for a purely local event with no
      *  provider to sync to. */
     dirty: boolean;
+    /** Kept trustworthy by a database trigger (bumped on every update
+     *  regardless of code path) so it can stand in for "this app's own
+     *  last-write time" in the READY-03 conflict policy -- see
+     *  resolveEventConflict in lib/calendar.ts. */
+    updatedAt: string;
     /** Set only on occurrences synthesized by expandRecurringEvents -- holds
      *  the master row's real id, so edit/delete route back to the whole
      *  series instead of this one occurrence's synthetic id. Absent on
      *  events read directly from the store. */
     instanceOf?: string;
+    /** Set only on occurrences synthesized by expandRecurringEvents from a
+     *  recurring master -- the occurrence's un-modified starts_at (before
+     *  any exception override), matching EventException.originalStartTime.
+     *  Identifies which occurrence this is independent of any override that
+     *  already moved its own startsAt, so a second edit still targets the
+     *  same exception row instead of creating a new one. */
+    originalStartTime?: string;
+    /** Set only when this synthesized occurrence already has an
+     *  EventException row overriding it -- that exception's own id, so
+     *  saving an edit updates it in place instead of upserting blind. */
+    exceptionId?: string;
+}
+
+/** A single occurrence of a recurring event edited or cancelled
+ *  independently of the rest of its series (READY-04) -- mirrors how
+ *  Google itself models a single-occurrence exception (a row with
+ *  recurringEventId + originalStartTime). masterEventId points back to the
+ *  recurring CalendarEvent this exception belongs to; originalStartTime
+ *  identifies which occurrence it overrides, by that occurrence's
+ *  un-modified startsAt (before any override) as expandRecurringEvents
+ *  would have produced it. When isCancelled is true, the rest of the
+ *  fields are meaningless (the occurrence is simply skipped); otherwise
+ *  they replace the master's own title/description/location/startsAt/
+ *  endsAt/allDay for this occurrence only. */
+export interface EventException {
+    id: string;
+    masterEventId: string;
+    originalStartTime: string;
+    isCancelled: boolean;
+    title: string | null;
+    description: string | null;
+    location: string | null;
+    startsAt: string | null;
+    endsAt: string | null;
+    allDay: boolean | null;
+    externalId: string | null;
 }
 
 export interface CalendarSettings {

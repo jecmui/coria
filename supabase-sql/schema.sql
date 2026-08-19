@@ -340,3 +340,148 @@ alter table calendar_events
 -- recurring series can drift by an hour during DST-mismatch weeks.
 alter table calendar_events
   add column event_time_zone text;
+
+-- Calendars: introduces multi-calendar support ahead of Google Calendar
+-- sync, where an account can have several calendars (primary, secondary,
+-- shared) instead of every event hanging directly off user_id. is_primary
+-- marks the one auto-created for every user (see handle_new_user below) and
+-- is where an event lands when no calendar is chosen. external_calendar_id
+-- maps this row to a synced provider calendar, null for a purely local one.
+create table calendars (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null,
+  color text,
+  is_primary boolean not null default false,
+  external_calendar_id text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- At most one primary calendar per user.
+create unique index calendars_user_primary_idx
+  on calendars (user_id)
+  where is_primary;
+
+alter table calendars enable row level security;
+
+create policy "Users manage own calendars"
+on calendars for all
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+-- Backfill: every existing user gets a default calendar, and every existing
+-- event attaches to it.
+insert into calendars (user_id, name, is_primary)
+select id, 'My Calendar', true
+from auth.users;
+
+alter table calendar_events
+  add column calendar_id uuid references calendars(id) on delete cascade;
+
+update calendar_events ce
+set calendar_id = c.id
+from calendars c
+where c.user_id = ce.user_id and c.is_primary;
+
+alter table calendar_events
+  alter column calendar_id set not null;
+
+create index calendar_events_calendar_id_idx
+  on calendar_events (calendar_id);
+
+-- New signups also get a primary calendar, same as their profile and
+-- preferences row.
+create or replace function public.handle_new_user()
+returns trigger as $$
+begin
+  insert into public.profiles (id, first_name)
+  values (new.id, new.raw_user_meta_data->>'first_name');
+
+  insert into public.user_preferences (user_id)
+  values (new.id);
+
+  insert into public.calendars (user_id, name, is_primary)
+  values (new.id, 'My Calendar', true);
+
+  return new;
+end;
+$$ language plpgsql security definer;
+
+-- updated_at trustworthiness: nothing currently bumps this column on edit,
+-- but two-way sync's conflict resolution (last-write-wins) needs to compare
+-- it against Google's own `updated` timestamp, so it has to reflect the
+-- real last write regardless of which code path performed it, not rely on
+-- every future write remembering to set it.
+create function public.set_updated_at()
+returns trigger as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$ language plpgsql;
+
+create trigger calendar_events_set_updated_at
+  before update on calendar_events
+  for each row execute function public.set_updated_at();
+
+create trigger calendar_connections_set_updated_at
+  before update on calendar_connections
+  for each row execute function public.set_updated_at();
+
+create trigger calendars_set_updated_at
+  before update on calendars
+  for each row execute function public.set_updated_at();
+
+-- READY-04: recurring-event exceptions. A single occurrence of a series can
+-- be edited or cancelled independently of the rest of it -- Google models
+-- this exactly the same way, as a row carrying recurringEventId +
+-- originalStartTime. master_event_id points at the recurring
+-- calendar_events row; original_start_time identifies which occurrence (by
+-- its un-modified starts_at, before any override) this row replaces --
+-- together they're unique, since a series can only have one exception per
+-- occurrence. A cancelled occurrence sets is_cancelled and leaves every
+-- other nullable column empty; a modified one fills in whichever of
+-- title/description/location/starts_at/ends_at/all_day it overrides,
+-- entirely independent of the master row's own values. dirty/deleted_at/
+-- external_id mirror calendar_events' own two-way-sync groundwork, since an
+-- exception is itself a syncable unit once sync exists.
+create table calendar_event_exceptions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  master_event_id uuid not null references calendar_events(id) on delete cascade,
+  original_start_time timestamptz not null,
+  is_cancelled boolean not null default false,
+  title text,
+  description text,
+  location text,
+  starts_at timestamptz,
+  ends_at timestamptz,
+  all_day boolean,
+  external_id text,
+  dirty boolean not null default true,
+  deleted_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (master_event_id, original_start_time),
+  constraint calendar_event_exceptions_modified_fields_check check (
+    is_cancelled or (
+      title is not null and starts_at is not null and ends_at is not null
+      and ends_at > starts_at
+    )
+  )
+);
+
+create index calendar_event_exceptions_master_event_id_idx
+  on calendar_event_exceptions (master_event_id);
+
+alter table calendar_event_exceptions enable row level security;
+
+create policy "Users manage own calendar event exceptions"
+on calendar_event_exceptions for all
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+create trigger calendar_event_exceptions_set_updated_at
+  before update on calendar_event_exceptions
+  for each row execute function public.set_updated_at();

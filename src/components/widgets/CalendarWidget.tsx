@@ -51,6 +51,7 @@ export const CalendarWidget = forwardRef<
     CalendarWidgetProps
 >(function CalendarWidget({ onOpenCalendar, onTodayVisibleChange }, ref) {
     const events = useCalendarStore((s) => s.events);
+    const exceptions = useCalendarStore((s) => s.exceptions);
     const settings = useCalendarStore((s) => s.settings);
     const loadEvents = useCalendarStore((s) => s.loadEvents);
     const [dayCount, setDayCount] = useState(1);
@@ -120,6 +121,7 @@ export const CalendarWidget = forwardRef<
         rangeStart,
         rangeEnd,
         settings.timeZone,
+        exceptions,
     );
 
     // Same all-day layout system as the full Calendar page (lib/calendar.ts):

@@ -1,6 +1,10 @@
 import { RRule } from "rrule";
 import type { Options as RRuleOptions } from "rrule";
-import type { CalendarEvent, CalendarSettings } from "../types/calendar";
+import type {
+    CalendarEvent,
+    CalendarSettings,
+    EventException,
+} from "../types/calendar";
 
 export const HOUR_HEIGHT = 56;
 export const DAY_COLUMN_MIN_WIDTH = 180;
@@ -670,6 +674,14 @@ export function buildRecurrenceRule(
  *  can resolve back to the whole series). A malformed recurrenceRule is
  *  logged and skipped rather than crashing the render.
  *
+ *  `exceptions` (READY-04) overrides individual occurrences: one whose
+ *  originalStartTime matches a generated occurrence is either dropped
+ *  entirely (isCancelled) or has its title/description/location/startsAt/
+ *  endsAt/allDay replaced before the occurrence is emitted, independent of
+ *  every other occurrence in the series. Only exceptions belonging to a
+ *  master present in `events` are ever consulted, so callers only need to
+ *  load exceptions for the recurring masters they've already loaded.
+ *
  *  `timeZone` is only a *fallback* -- each event's own eventTimeZone (set
  *  for events synced from Google, which carries its own per-event time
  *  zone that isn't always the calendar's default) takes priority when
@@ -683,8 +695,19 @@ export function expandRecurringEvents(
     rangeStart: Date,
     rangeEnd: Date,
     timeZone: string,
+    exceptions: EventException[],
 ): CalendarEvent[] {
     const result: CalendarEvent[] = [];
+
+    const exceptionsByMaster = new Map<string, Map<string, EventException>>();
+    for (const exception of exceptions) {
+        let byOriginalStart = exceptionsByMaster.get(exception.masterEventId);
+        if (!byOriginalStart) {
+            byOriginalStart = new Map();
+            exceptionsByMaster.set(exception.masterEventId, byOriginalStart);
+        }
+        byOriginalStart.set(exception.originalStartTime, exception);
+    }
 
     for (const event of events) {
         const start = new Date(event.startsAt);
@@ -700,6 +723,7 @@ export function expandRecurringEvents(
         // An occurrence starting just before rangeStart can still overlap
         // it once its own duration is accounted for.
         const queryFrom = new Date(rangeStart.getTime() - durationMs);
+        const eventExceptions = exceptionsByMaster.get(event.id);
 
         let occurrences: Date[];
         try {
@@ -724,15 +748,29 @@ export function expandRecurringEvents(
 
         for (const occurrence of occurrences) {
             const occStartIso = fromFloatingUtc(occurrence, eventTimeZone);
-            const occStart = new Date(occStartIso);
-            const occEnd = new Date(occStart.getTime() + durationMs);
+            const exception = eventExceptions?.get(occStartIso);
+            if (exception?.isCancelled) continue;
+
+            const startsAt = exception?.startsAt ?? occStartIso;
+            const occStart = new Date(startsAt);
+            const endsAt =
+                exception?.endsAt ??
+                new Date(occStart.getTime() + durationMs).toISOString();
+            const occEnd = new Date(endsAt);
             if (occStart >= rangeEnd || occEnd <= rangeStart) continue;
+
             result.push({
                 ...event,
-                id: `${event.id}::${occStartIso}`,
-                startsAt: occStartIso,
-                endsAt: occEnd.toISOString(),
+                id: exception?.id ?? `${event.id}::${occStartIso}`,
+                title: exception?.title ?? event.title,
+                description: exception?.description ?? event.description,
+                location: exception?.location ?? event.location,
+                startsAt,
+                endsAt,
+                allDay: exception?.allDay ?? event.allDay,
                 instanceOf: event.id,
+                originalStartTime: occStartIso,
+                exceptionId: exception?.id,
             });
         }
     }
@@ -795,4 +833,21 @@ export function computeAllDayDayInfo(
         hiddenCount: dayItems.length - shownItems.length,
         maxShownRow: Math.max(...shownItems.map((item) => item.row)),
     };
+}
+
+/** READY-03 conflict policy: when the same event changed on both sides
+ *  between syncs, last-write-wins -- whichever side's own timestamp
+ *  (Coria's updatedAt, kept trustworthy by the calendar_events trigger, vs
+ *  Google's own `updated` field) is more recent wins the conflict. A tie
+ *  favors the local copy, since a sync pass that's about to push a local
+ *  change shouldn't discard it in favor of an identically-timed pull. Not
+ *  yet called anywhere -- there's no sync engine to call it from -- but the
+ *  decision needs to live somewhere concrete instead of only on paper. */
+export function resolveEventConflict(
+    localUpdatedAt: string,
+    remoteUpdatedAt: string,
+): "local" | "remote" {
+    return new Date(localUpdatedAt) >= new Date(remoteUpdatedAt)
+        ? "local"
+        : "remote";
 }

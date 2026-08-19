@@ -38,6 +38,10 @@ interface CalendarPageProps {
 }
 
 interface EventDraft {
+    /** The master event's id -- set when editing an existing series (or a
+     *  non-recurring event) as a whole, absent both when creating a new
+     *  event and when occurrenceEdit is set (a single-occurrence edit has
+     *  no master row of its own to reference here). */
     id?: string;
     title: string;
     description: string;
@@ -55,6 +59,14 @@ interface EventDraft {
     repeatEndMode: RepeatEndMode;
     repeatEndDate: string;
     repeatCount: number;
+    /** READY-04: set when this draft edits a single occurrence of a
+     *  recurring series rather than the series itself -- saving writes an
+     *  EventException instead of the master row, and the repeat controls
+     *  are hidden (a single occurrence can't have its own repeat rule). */
+    occurrenceEdit?: {
+        masterEventId: string;
+        originalStartTime: string;
+    };
 }
 
 const WEEKDAYS = Array.from({ length: 7 }, (_, index) => index);
@@ -257,6 +269,7 @@ const ALL_DAY_VISIBLE_WHEN_COLLAPSED = 2;
 export function CalendarPage({ onBack }: CalendarPageProps) {
     const {
         events,
+        exceptions,
         settings,
         loading,
         error,
@@ -264,9 +277,19 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
         addEvent,
         updateEvent,
         removeEvent,
+        saveEventException,
+        cancelEventOccurrence,
     } = useCalendarStore();
     const [currentDate, setCurrentDate] = useState(new Date());
     const [draft, setDraft] = useState<EventDraft | null>(null);
+    // Set when a clicked occurrence belongs to a recurring series, so the
+    // user is asked "this event" vs "all events" before a draft is ever
+    // opened -- that choice decides both how the draft loads and what its
+    // Delete button does, so it has to happen before editEvent/editOccurrence,
+    // not inside the already-open modal.
+    const [scopeChoice, setScopeChoice] = useState<CalendarEvent | null>(
+        null,
+    );
     const [allDayExpanded, setAllDayExpanded] = useState(false);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     // Ticks the current-time indicator line -- 30s is frequent enough to
@@ -374,6 +397,69 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
         });
     }
 
+    /** READY-04: opens a draft that edits just the clicked occurrence, not
+     *  the series -- `clicked` is a synthesized occurrence from
+     *  expandRecurringEvents, already reflecting any existing exception's
+     *  own overrides, so pre-filling from it (rather than the master)
+     *  starts the form from what's actually showing. originalStartTime
+     *  pins down exactly which occurrence this is, independent of any
+     *  override that already moved its own startsAt -- saving always
+     *  targets that same occurrence, never creates a second one. */
+    function editOccurrence(clicked: CalendarEvent) {
+        setDraft({
+            title: clicked.title,
+            description: clicked.description,
+            location: clicked.location,
+            startDate: dateInputValue(
+                new Date(clicked.startsAt),
+                settings.timeZone,
+            ),
+            startTime: timeInputValue(
+                new Date(clicked.startsAt),
+                settings.timeZone,
+            ),
+            endDate: dateInputValue(
+                new Date(clicked.endsAt),
+                settings.timeZone,
+            ),
+            endTime: timeInputValue(
+                new Date(clicked.endsAt),
+                settings.timeZone,
+            ),
+            allDay: clicked.allDay,
+            ...DEFAULT_REPEAT_STATE,
+            occurrenceEdit: {
+                masterEventId: clicked.instanceOf!,
+                originalStartTime: clicked.originalStartTime!,
+            },
+        });
+    }
+
+    /** Entry point for every click on a rendered event -- a non-recurring
+     *  event (or the rare case where a click somehow reaches a master row
+     *  directly) skips straight to editing it, but a recurring occurrence
+     *  always needs "this event" vs "all events" decided first, since that
+     *  choice changes both what the draft edits and what its Delete button
+     *  does. */
+    function handleEventClick(clicked: CalendarEvent) {
+        if (clicked.instanceOf) {
+            setScopeChoice(clicked);
+        } else {
+            editEvent(clicked);
+        }
+    }
+
+    function chooseScope(scope: "occurrence" | "series") {
+        const clicked = scopeChoice;
+        setScopeChoice(null);
+        if (!clicked) return;
+        if (scope === "series") {
+            editEvent(clicked);
+        } else {
+            editOccurrence(clicked);
+        }
+    }
+
     async function handleSaveEvent() {
         if (
             !draft?.title.trim() ||
@@ -385,51 +471,66 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
         // All-day events ignore the time-of-day inputs and instead span the
         // full day(s) from startDate through endDate, exclusive end (the
         // start of the day after endDate), matching Google Calendar.
+        const startsAt = draft.allDay
+            ? inputValuesToUtcIso(draft.startDate, "00:00", settings.timeZone)
+            : inputValuesToUtcIso(
+                  draft.startDate,
+                  draft.startTime,
+                  settings.timeZone,
+              );
+        const endsAt = draft.allDay
+            ? inputValuesToUtcIso(
+                  addDaysToDateValue(draft.endDate, 1),
+                  "00:00",
+                  settings.timeZone,
+              )
+            : inputValuesToUtcIso(
+                  draft.endDate,
+                  draft.endTime,
+                  settings.timeZone,
+              );
+        if (new Date(endsAt) <= new Date(startsAt)) return;
+
+        if (draft.occurrenceEdit) {
+            const saved = await saveEventException(
+                draft.occurrenceEdit.masterEventId,
+                draft.occurrenceEdit.originalStartTime,
+                {
+                    title: draft.title.trim(),
+                    description: draft.description.trim(),
+                    location: draft.location.trim(),
+                    startsAt,
+                    endsAt,
+                    allDay: draft.allDay,
+                },
+            );
+            if (saved) setDraft(null);
+            return;
+        }
+
         const event = {
             title: draft.title.trim(),
             description: draft.description.trim(),
             location: draft.location.trim(),
-            startsAt: draft.allDay
-                ? inputValuesToUtcIso(
-                      draft.startDate,
-                      "00:00",
-                      settings.timeZone,
-                  )
-                : inputValuesToUtcIso(
-                      draft.startDate,
-                      draft.startTime,
-                      settings.timeZone,
-                  ),
-            endsAt: draft.allDay
-                ? inputValuesToUtcIso(
-                      addDaysToDateValue(draft.endDate, 1),
-                      "00:00",
-                      settings.timeZone,
-                  )
-                : inputValuesToUtcIso(
-                      draft.endDate,
-                      draft.endTime,
-                      settings.timeZone,
-                  ),
+            startsAt,
+            endsAt,
             allDay: draft.allDay,
-            recurrenceRule: null as string | null,
+            recurrenceRule: buildRecurrenceRule(
+                draft.repeatPreset,
+                {
+                    interval: draft.customInterval,
+                    unit: draft.customUnit,
+                    weekdays: draft.customWeekdays,
+                },
+                {
+                    mode: draft.repeatEndMode,
+                    date: draft.repeatEndDate,
+                    count: draft.repeatCount,
+                },
+                new Date(startsAt),
+                settings.timeZone,
+            ),
         };
-        if (new Date(event.endsAt) <= new Date(event.startsAt)) return;
-        event.recurrenceRule = buildRecurrenceRule(
-            draft.repeatPreset,
-            {
-                interval: draft.customInterval,
-                unit: draft.customUnit,
-                weekdays: draft.customWeekdays,
-            },
-            {
-                mode: draft.repeatEndMode,
-                date: draft.repeatEndDate,
-                count: draft.repeatCount,
-            },
-            new Date(event.startsAt),
-            settings.timeZone,
-        );
         const saved = draft.id
             ? await updateEvent(draft.id, event)
             : await addEvent(event);
@@ -437,6 +538,13 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
     }
 
     async function handleDeleteEvent() {
+        if (draft?.occurrenceEdit) {
+            const { masterEventId, originalStartTime } =
+                draft.occurrenceEdit;
+            if (await cancelEventOccurrence(masterEventId, originalStartTime))
+                setDraft(null);
+            return;
+        }
         if (!draft?.id) return;
         if (await removeEvent(draft.id)) setDraft(null);
     }
@@ -450,6 +558,7 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
         weekStart,
         visibleWeekEnd,
         settings.timeZone,
+        exceptions,
     );
     const allDayLayout = layoutAllDayEvents(
         visibleEvents.filter((event) => event.allDay),
@@ -655,7 +764,7 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                             <button
                                 key={item.event.id}
                                 type="button"
-                                onClick={() => editEvent(item.event)}
+                                onClick={() => handleEventClick(item.event)}
                                 style={{
                                     top:
                                         HEADER_TEXT_HEIGHT +
@@ -792,7 +901,9 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                                         mouseEvent,
                                                     ) => {
                                                         mouseEvent.stopPropagation();
-                                                        editEvent(event);
+                                                        handleEventClick(
+                                                            event,
+                                                        );
                                                     }}
                                                     className={`absolute flex flex-col items-start justify-start overflow-hidden border border-pin-todo/40 bg-pin-todo/70 px-2 py-1 text-left text-xs text-ink shadow-sm hover:cursor-pointer hover:bg-pin-todo/8 ${
                                                         continuesFromPrevDay
@@ -859,7 +970,11 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                     <div className="w-full max-w-lg rounded-2xl border border-paper-edge bg-paper p-5 shadow-[0_16px_48px_rgba(0,0,0,0.35)]">
                         <div className="mb-4 flex items-center justify-between">
                             <h2 className="font-display text-lg font-semibold">
-                                {draft.id ? "Edit event" : "New event"}
+                                {draft.occurrenceEdit
+                                    ? "Edit this event"
+                                    : draft.id
+                                      ? "Edit event"
+                                      : "New event"}
                             </h2>
                             <button
                                 type="button"
@@ -975,7 +1090,8 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                     All day
                                 </span>
                             </label>
-                            {(() => {
+                            {!draft.occurrenceEdit &&
+                                (() => {
                                 const repeatLabels = describeRepeatPresets(
                                     draft.startDate,
                                     settings,
@@ -1292,13 +1408,15 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                             </label>
                         </div>
                         <div className="mt-5 flex justify-between gap-2">
-                            {draft.id ? (
+                            {draft.id || draft.occurrenceEdit ? (
                                 <button
                                     type="button"
                                     onClick={() => void handleDeleteEvent()}
                                     className="rounded-full px-4 py-2 text-sm font-semibold text-pin-timer hover:cursor-pointer hover:bg-pin-timer/10"
                                 >
-                                    Delete
+                                    {draft.occurrenceEdit
+                                        ? "Delete this event"
+                                        : "Delete"}
                                 </button>
                             ) : (
                                 <span />
@@ -1320,6 +1438,43 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                     Save
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {scopeChoice && (
+                <div className="fixed inset-0 z-100 flex items-center justify-center bg-black/40 px-4">
+                    <div className="w-full max-w-xs rounded-2xl border border-paper-edge bg-paper p-5 shadow-[0_16px_48px_rgba(0,0,0,0.35)]">
+                        <h2 className="mb-1 font-display text-base font-semibold">
+                            {scopeChoice.title}
+                        </h2>
+                        <p className="mb-4 text-xs text-ink-soft">
+                            This is a repeating event. What would you like to
+                            change?
+                        </p>
+                        <div className="flex flex-col gap-2">
+                            <button
+                                type="button"
+                                onClick={() => chooseScope("occurrence")}
+                                className="rounded-full bg-pin-todo px-4 py-2 text-sm font-semibold hover:cursor-pointer hover:bg-pin-todo/90"
+                            >
+                                This event
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => chooseScope("series")}
+                                className="rounded-full border border-paper-edge px-4 py-2 text-sm font-semibold hover:cursor-pointer hover:bg-black/5"
+                            >
+                                All events
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setScopeChoice(null)}
+                                className="rounded-full px-4 py-2 text-sm font-semibold text-ink-soft hover:cursor-pointer hover:bg-black/5"
+                            >
+                                Cancel
+                            </button>
                         </div>
                     </div>
                 </div>
