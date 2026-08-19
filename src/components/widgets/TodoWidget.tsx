@@ -53,6 +53,9 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
     const toggleDone = useTaskStore((s) => s.toggleDone);
     const reorderFocusTasks = useTaskStore((s) => s.reorderFocusTasks);
     const sortCompletedToBottom = useTaskStore((s) => s.sortCompletedToBottom);
+    const saveSortCompletedToBottom = useTaskStore(
+        (s) => s.saveSortCompletedToBottom,
+    );
     const focusTasks = [...tasks]
         .filter((t) => t.focusToday)
         .sort((a, b) => {
@@ -276,6 +279,11 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
 
     function handleToggleSnapToGrid() {
         void toggleSnapToGrid();
+        closeMenu();
+    }
+
+    function handleToggleSortCompletedToBottom() {
+        void saveSortCompletedToBottom(!sortCompletedToBottom);
         closeMenu();
     }
 
@@ -555,6 +563,12 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
                             onSelect: handleClearAll,
                         },
                     ];
+                    const sortCompletedToBottomItem: ContextMenuItem = {
+                        key: "sort-completed-to-bottom",
+                        label: "Auto-move completed to bottom",
+                        checked: sortCompletedToBottom,
+                        onSelect: handleToggleSortCompletedToBottom,
+                    };
                     const snapToGridItem: ContextMenuItem = {
                         key: "snap-to-grid",
                         label: "Snap to grid",
@@ -578,9 +592,14 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
                                           handleDeleteTask(menu.taskId),
                                   },
                                   ...clearItems,
+                                  sortCompletedToBottomItem,
                                   snapToGridItem,
                               ]
-                            : [...clearItems, snapToGridItem];
+                            : [
+                                  ...clearItems,
+                                  sortCompletedToBottomItem,
+                                  snapToGridItem,
+                              ];
 
                     return (
                         <ContextMenu
