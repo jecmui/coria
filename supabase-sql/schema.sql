@@ -501,3 +501,34 @@ alter table calendar_events
 
 alter table calendar_event_exceptions
   add column external_raw jsonb;
+
+-- READY-06: OAuth tokens live here, never on calendar_connections itself.
+-- calendar_connections stays client-readable by design (its own policies
+-- above let a user select/manage their own row, so the UI can show
+-- "Connected") -- fine for metadata, but wrong for a token, since RLS is
+-- row-level, not column-level, and the browser only ever holds the
+-- anon/authenticated key. This table enables RLS and deliberately defines
+-- no policy for anon/authenticated at all: Postgres denies by default once
+-- RLS is on and nothing matches, so there's no query the browser could
+-- send that would return a row. Only Supabase's service_role key -- which
+-- bypasses RLS entirely and only ever lives as an env var on a trusted
+-- backend, never in the client bundle -- can read or write this table.
+-- That backend is the Supabase Edge Functions from the Google Calendar
+-- integration's Phase 1 (google-oauth-callback writes here after the
+-- initial token exchange; google-token-refresh and google-calendar-sync
+-- read/refresh from here on every later call).
+create table calendar_connection_secrets (
+  connection_id uuid primary key references calendar_connections(id) on delete cascade,
+  access_token text not null,
+  refresh_token text not null,
+  expires_at timestamptz not null,
+  scope text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table calendar_connection_secrets enable row level security;
+
+create trigger calendar_connection_secrets_set_updated_at
+  before update on calendar_connection_secrets
+  for each row execute function public.set_updated_at();
