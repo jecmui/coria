@@ -532,3 +532,35 @@ alter table calendar_connection_secrets enable row level security;
 create trigger calendar_connection_secrets_set_updated_at
   before update on calendar_connection_secrets
   for each row execute function public.set_updated_at();
+
+-- READY-07: external_calendar_id belongs on `calendars` (READY-01) now,
+-- not here -- a connection is one Google *account*, which can hold several
+-- calendars, so a single external_calendar_id column on the connection
+-- row can't represent that; each calendar's own row maps to its own
+-- Google calendar instead. Backfilled onto the user's primary calendar
+-- first so nothing is silently lost if this ever runs against a
+-- connection that already has one -- in practice there shouldn't be any
+-- yet, since no OAuth flow exists to have written one.
+update calendars c
+set external_calendar_id = cc.external_calendar_id
+from calendar_connections cc
+where cc.user_id = c.user_id
+  and c.is_primary
+  and cc.external_calendar_id is not null
+  and c.external_calendar_id is null;
+
+alter table calendar_connections
+  drop column external_calendar_id;
+
+-- READY-08 sync trigger model: polling, not webhooks, for v1. A client
+-- checking in (on load, on a timer, or a manual "Sync now") needs nothing
+-- beyond the OAuth endpoint Phase 1 already builds; webhooks need a
+-- standing public HTTPS endpoint, channel renewal, and notification
+-- verification -- real complexity worth deferring until the core pull/push
+-- loop is proven. poll_interval_seconds is how often a background sync
+-- pass should run for this connection; last_synced_at (above) is what a
+-- poll compares its own clock against to decide whether it's due. Revisit
+-- this table (e.g. a webhook_channel_id / webhook_expires_at pair) if
+-- webhooks are ever picked up as the later upgrade.
+alter table calendar_connections
+  add column poll_interval_seconds integer not null default 300;
