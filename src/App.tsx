@@ -87,6 +87,36 @@ export default function App() {
         return () => window.clearInterval(interval);
     }, []);
 
+    // Phase 5 / READY-08: Coria polls Google rather than receiving webhooks,
+    // so a sync pass runs on the connection's own cadence while the app is
+    // open (alongside the immediate, debounced push each local edit already
+    // schedules in calendarStore). One runs right away on connect, so a
+    // freshly linked calendar populates without waiting out a full interval.
+    const googleConnection = useCalendarStore((s) => s.googleConnection);
+    const pollIntervalSeconds = googleConnection?.pollIntervalSeconds;
+    useEffect(() => {
+        if (!user || !pollIntervalSeconds) return;
+        const sync = () => void useCalendarStore.getState().syncGoogleCalendar();
+        sync();
+        const interval = window.setInterval(sync, pollIntervalSeconds * 1000);
+        return () => window.clearInterval(interval);
+    }, [user, pollIntervalSeconds]);
+
+    // google-oauth-callback redirects the browser back to the app's root
+    // URL with a `google` query param -- jump straight to Settings >
+    // Calendar so the outcome (handled by CalendarSection itself) is
+    // immediately visible, instead of landing back on the Board with no
+    // indication anything happened. Waits for auth to resolve first so this
+    // doesn't fire while still on the loading gate below.
+    const handledGoogleRedirectRef = useRef(false);
+    useEffect(() => {
+        if (loading || !user || handledGoogleRedirectRef.current) return;
+        if (!window.location.search.includes("google=")) return;
+        handledGoogleRedirectRef.current = true;
+        setView("settings");
+        setSettingsSection("calendar");
+    }, [loading, user]);
+
     // Keep the live CSS variables in sync with the saved appearance settings,
     // and with the OS color scheme while "System Default" is selected (this
     // includes while logged out -- the default settings are theme: "system",

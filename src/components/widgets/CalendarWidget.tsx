@@ -15,8 +15,8 @@ import {
     eventOverlapsDay,
     expandRecurringEvents,
     formatDayName,
+    formatEventTimeRange,
     formatMonthDay,
-    formatTime,
     layoutAllDayEvents,
     sameCalendarDay,
     startOfDay,
@@ -94,7 +94,14 @@ export const CalendarWidget = forwardRef<
     }, []);
 
     const today = new Date();
-    const anchor = addDays(today, dayOffset);
+    // startOfDay matters here, not just cosmetically -- rangeStart below is
+    // derived from anchor via days[0], and expandRecurringEvents only keeps
+    // a non-recurring event when it ends *after* rangeStart. Without this,
+    // anchor carries the current wall-clock time, so any event on the
+    // leftmost visible day that already started earlier today gets cut
+    // off -- on a single-day view of today, that's every event that's
+    // already happened, which by evening can be all of them.
+    const anchor = startOfDay(addDays(today, dayOffset));
     // Leans toward the future on ties (e.g. 2 days shows today+tomorrow, not
     // yesterday+today) -- daysBefore rounds *down*, so any extra day from an
     // even count lands after the anchor instead of before it.
@@ -302,8 +309,9 @@ export const CalendarWidget = forwardRef<
                                         {event.title}
                                     </p>
                                     <p className="truncate text-ink-soft">
-                                        {formatTime(
-                                            new Date(event.startsAt),
+                                        {formatEventTimeRange(
+                                            event.startsAt,
+                                            event.endsAt,
                                             settings,
                                         )}
                                     </p>

@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { RRule, Weekday } from "rrule";
 import { useCalendarStore } from "../store/calendarStore";
+import { useModalDismiss } from "../lib/useModalDismiss";
 import type { CalendarEvent, CalendarSettings } from "../types/calendar";
 import type {
     CustomRepeatUnit,
@@ -17,16 +18,20 @@ import {
     computeAllDayDayInfo,
     dateInputValue,
     expandRecurringEvents,
+    eventDateZone,
     eventOverlapsDay,
     floatingUtcToDateValue,
+    formatDate,
     formatDayName,
+    formatEventTimeRange,
+    formatFullEventTimeRange,
     formatHour,
     formatMonthDay,
-    formatTime,
     getWeekStart,
     inputValuesToUtcIso,
     layoutAllDayEvents,
     layoutTimedEventsForDay,
+    MIN_EVENT_HEIGHT,
     ordinalWeekdayOfMonth,
     sameCalendarDay,
     timeInputValue,
@@ -67,6 +72,12 @@ interface EventDraft {
         masterEventId: string;
         originalStartTime: string;
     };
+    /** The calendar this event already belongs to -- absent when creating a
+     *  new event (it lands on the primary calendar by default). Purely
+     *  informational: nothing in handleSaveEvent sends it back, it only
+     *  drives whether Save/Delete are disabled for a calendar Coria can't
+     *  write to (see the "manage synced calendars" picker in Settings). */
+    calendarId?: string;
 }
 
 const WEEKDAYS = Array.from({ length: 7 }, (_, index) => index);
@@ -219,6 +230,31 @@ function repeatStateFromRule(
     return state;
 }
 
+/** Fills the draft's four date/time inputs from a stored event.
+ *
+ *  Two things differ for an all-day event. Its instants are read in UTC, not
+ *  the viewer's zone, because it's a floating calendar date rather than a
+ *  real instant (see eventDateZone in lib/calendar.ts). And its stored end is
+ *  *exclusive* -- midnight starting the day after the last day it covers --
+ *  while the form's End field means the last day it covers, so the stored end
+ *  is stepped back one instant to name that day. handleSaveEvent applies the
+ *  matching +1 day on the way out, so the pair round-trips. */
+function draftDatesFromEvent(
+    event: CalendarEvent,
+    timeZone: string,
+): Pick<EventDraft, "startDate" | "startTime" | "endDate" | "endTime"> {
+    const zone = eventDateZone(event, timeZone);
+    const start = new Date(event.startsAt);
+    const rawEnd = new Date(event.endsAt);
+    const end = event.allDay ? new Date(rawEnd.getTime() - 1) : rawEnd;
+    return {
+        startDate: dateInputValue(start, zone),
+        startTime: timeInputValue(start, zone),
+        endDate: dateInputValue(end, zone),
+        endTime: timeInputValue(end, zone),
+    };
+}
+
 /** Human-readable labels for the repeat picker's fixed presets, derived
  *  live from the draft's start date so e.g. "Monthly" reads as "Monthly on
  *  the third Tuesday" once a start date is chosen. */
@@ -265,11 +301,27 @@ const ALL_DAY_BAR_HEIGHT = 23;
 const ALL_DAY_OVERFLOW_THRESHOLD = 3;
 /** How many of an overflowing day's events stay visible before truncating. */
 const ALL_DAY_VISIBLE_WHEN_COLLAPSED = 2;
+/** Line height (px) of a timed event's title text (text-xs). */
+const EVENT_TITLE_LINE_HEIGHT = 16;
+/** Vertical space (px) inside a timed event block that isn't available to
+ *  its title -- the py-1 padding (8px) plus the 1px border on each edge. */
+const EVENT_BOX_CHROME = 10;
+/** Same, for a block clamped to MIN_EVENT_HEIGHT -- just the 1px top/bottom
+ *  border, no vertical padding at all (see the block below), since at
+ *  MIN_EVENT_HEIGHT there's only exactly enough room for one line of title
+ *  and nothing to spare for it. */
+const EVENT_BOX_CHROME_MINIMAL = 2;
+/** Vertical space (px) of one text-[10px] leading-tight details line (the
+ *  time range, or the location, each on their own line below the title). */
+const EVENT_DETAIL_LINE_HEIGHT = 13;
+/** Vertical space (px) above the first details line -- its own mt-0.5. */
+const EVENT_DETAILS_MARGIN = 2;
 
 export function CalendarPage({ onBack }: CalendarPageProps) {
     const {
         events,
         exceptions,
+        calendars,
         settings,
         loading,
         error,
@@ -282,6 +334,15 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
     } = useCalendarStore();
     const [currentDate, setCurrentDate] = useState(new Date());
     const [draft, setDraft] = useState<EventDraft | null>(null);
+    const [draftError, setDraftError] = useState<string | null>(null);
+    // Every setDraft call (opening the modal fresh, editing a field, or
+    // closing it) creates a new draft object -- clearing the error on any
+    // of those means a stale message from a previous attempt never lingers
+    // into a new one, and a validation error clears itself the moment the
+    // user starts fixing the field it complained about.
+    useEffect(() => {
+        setDraftError(null);
+    }, [draft]);
     // Set when a clicked occurrence belongs to a recurring series, so the
     // user is asked "this event" vs "all events" before a draft is ever
     // opened -- that choice decides both how the draft loads and what its
@@ -289,6 +350,23 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
     // not inside the already-open modal.
     const [scopeChoice, setScopeChoice] = useState<CalendarEvent | null>(
         null,
+    );
+    // Clicking any event opens this read-only preview first, rather than
+    // jumping straight to the edit form -- its own Edit button is what
+    // triggers the scope-choice-then-editEvent flow below.
+    const [previewEvent, setPreviewEvent] = useState<CalendarEvent | null>(
+        null,
+    );
+    // Escape and clicking outside close whichever of these three is
+    // currently open, same as their own Cancel/×/Close buttons already do.
+    const dismissDraft = useModalDismiss(draft !== null, () =>
+        setDraft(null),
+    );
+    const dismissScopeChoice = useModalDismiss(scopeChoice !== null, () =>
+        setScopeChoice(null),
+    );
+    const dismissPreview = useModalDismiss(previewEvent !== null, () =>
+        setPreviewEvent(null),
     );
     const [allDayExpanded, setAllDayExpanded] = useState(false);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -371,28 +449,23 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
             : clicked;
         setDraft({
             id: event.id,
+            calendarId: event.calendarId,
             title: event.title,
             description: event.description,
             location: event.location,
-            startDate: dateInputValue(
-                new Date(event.startsAt),
-                settings.timeZone,
-            ),
-            startTime: timeInputValue(
-                new Date(event.startsAt),
-                settings.timeZone,
-            ),
-            endDate: dateInputValue(new Date(event.endsAt), settings.timeZone),
-            endTime: timeInputValue(new Date(event.endsAt), settings.timeZone),
+            ...draftDatesFromEvent(event, settings.timeZone),
             allDay: event.allDay,
             // The rule's weekday/nth were derived from whichever time zone
             // the event was actually authored in (Google's per-event zone
-            // when it has one), not necessarily the calendar's own -- same
-            // reasoning as expandRecurringEvents.
+            // when it has one, UTC for an all-day series), not necessarily
+            // the calendar's own -- same reasoning as expandRecurringEvents.
             ...repeatStateFromRule(
                 event.recurrenceRule,
                 event.startsAt,
-                event.eventTimeZone ?? settings.timeZone,
+                eventDateZone(
+                    event,
+                    event.eventTimeZone ?? settings.timeZone,
+                ),
             ),
         });
     }
@@ -407,25 +480,11 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
      *  targets that same occurrence, never creates a second one. */
     function editOccurrence(clicked: CalendarEvent) {
         setDraft({
+            calendarId: clicked.calendarId,
             title: clicked.title,
             description: clicked.description,
             location: clicked.location,
-            startDate: dateInputValue(
-                new Date(clicked.startsAt),
-                settings.timeZone,
-            ),
-            startTime: timeInputValue(
-                new Date(clicked.startsAt),
-                settings.timeZone,
-            ),
-            endDate: dateInputValue(
-                new Date(clicked.endsAt),
-                settings.timeZone,
-            ),
-            endTime: timeInputValue(
-                new Date(clicked.endsAt),
-                settings.timeZone,
-            ),
+            ...draftDatesFromEvent(clicked, settings.timeZone),
             allDay: clicked.allDay,
             ...DEFAULT_REPEAT_STATE,
             occurrenceEdit: {
@@ -435,13 +494,22 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
         });
     }
 
-    /** Entry point for every click on a rendered event -- a non-recurring
-     *  event (or the rare case where a click somehow reaches a master row
-     *  directly) skips straight to editing it, but a recurring occurrence
-     *  always needs "this event" vs "all events" decided first, since that
-     *  choice changes both what the draft edits and what its Delete button
-     *  does. */
+    /** Entry point for every click on a rendered event -- opens the
+     *  read-only preview first; editing only starts once its own Edit
+     *  button is clicked (see handleEditFromPreview). */
     function handleEventClick(clicked: CalendarEvent) {
+        setPreviewEvent(clicked);
+    }
+
+    /** The preview's Edit button -- a non-recurring event (or the rare case
+     *  where a click somehow reaches a master row directly) skips straight
+     *  to editing it, but a recurring occurrence always needs "this event"
+     *  vs "all events" decided first, since that choice changes both what
+     *  the draft edits and what its Delete button does. */
+    function handleEditFromPreview() {
+        if (!previewEvent) return;
+        const clicked = previewEvent;
+        setPreviewEvent(null);
         if (clicked.instanceOf) {
             setScopeChoice(clicked);
         } else {
@@ -461,18 +529,27 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
     }
 
     async function handleSaveEvent() {
-        if (
-            !draft?.title.trim() ||
-            !draft.startDate ||
-            !draft.endDate ||
-            (!draft.allDay && (!draft.startTime || !draft.endTime))
-        )
+        if (!draft) return;
+        if (!draft.title.trim()) {
+            setDraftError("Title is required.");
             return;
+        }
+        if (!draft.startDate || !draft.endDate) {
+            setDraftError("Start and end dates are required.");
+            return;
+        }
+        if (!draft.allDay && (!draft.startTime || !draft.endTime)) {
+            setDraftError("Start and end times are required.");
+            return;
+        }
         // All-day events ignore the time-of-day inputs and instead span the
         // full day(s) from startDate through endDate, exclusive end (the
-        // start of the day after endDate), matching Google Calendar.
+        // start of the day after endDate), matching Google Calendar. They're
+        // anchored to UTC midnight rather than the viewer's zone because an
+        // all-day event is a floating calendar date, not an instant -- see
+        // eventDateZone in lib/calendar.ts.
         const startsAt = draft.allDay
-            ? inputValuesToUtcIso(draft.startDate, "00:00", settings.timeZone)
+            ? inputValuesToUtcIso(draft.startDate, "00:00", "UTC")
             : inputValuesToUtcIso(
                   draft.startDate,
                   draft.startTime,
@@ -482,14 +559,17 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
             ? inputValuesToUtcIso(
                   addDaysToDateValue(draft.endDate, 1),
                   "00:00",
-                  settings.timeZone,
+                  "UTC",
               )
             : inputValuesToUtcIso(
                   draft.endDate,
                   draft.endTime,
                   settings.timeZone,
               );
-        if (new Date(endsAt) <= new Date(startsAt)) return;
+        if (new Date(endsAt) < new Date(startsAt)) {
+            setDraftError("End can't be before start.");
+            return;
+        }
 
         if (draft.occurrenceEdit) {
             const saved = await saveEventException(
@@ -504,7 +584,11 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                     allDay: draft.allDay,
                 },
             );
-            if (saved) setDraft(null);
+            if (saved) {
+                setDraft(null);
+            } else {
+                setDraftError("Couldn't save event. Try again.");
+            }
             return;
         }
 
@@ -528,13 +612,19 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                     count: draft.repeatCount,
                 },
                 new Date(startsAt),
-                settings.timeZone,
+                // An all-day series' anchor is UTC midnight, so its BYDAY
+                // weekday has to be read there too -- see eventDateZone.
+                draft.allDay ? "UTC" : settings.timeZone,
             ),
         };
         const saved = draft.id
             ? await updateEvent(draft.id, event)
             : await addEvent(event);
-        if (saved !== false && saved !== null) setDraft(null);
+        if (saved !== false && saved !== null) {
+            setDraft(null);
+        } else {
+            setDraftError("Couldn't save event. Try again.");
+        }
     }
 
     async function handleDeleteEvent() {
@@ -631,6 +721,17 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
         );
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    // "Manage synced calendars" lets a user pull from a Google calendar
+    // they can't write to -- editing or deleting one of its events would
+    // just fail at Google on the next push, so the whole form is disabled
+    // (via the fieldset below) instead of only Save/Delete, which would
+    // otherwise let the user fill out changes with no way to keep them.
+    const readOnlyCalendar = Boolean(
+        draft?.calendarId &&
+            calendars.find((calendar) => calendar.id === draft.calendarId)
+                ?.isWritable === false,
+    );
 
     return (
         <div className="flex h-full w-full flex-col bg-board px-3 py-4 font-body text-ink sm:px-5 sm:py-5">
@@ -823,8 +924,19 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                         )}
                     </div>
 
-                    <div className="grid min-w-225 grid-cols-[64px_repeat(7,minmax(0,1fr))]">
-                        <div className="sticky left-0 top-0 z-20 h-336 border-r border-paper-edge bg-paper/95">
+                    {/* relative + z-10 gives this whole scrolling body its
+                        own stacking context, capped below the header's
+                        z-20 -- otherwise the current-time indicator's z-30
+                        (needed to stay above cascaded event bands, whose
+                        own z-index can climb past 20 in a busy day) would
+                        escape past the header itself once scrolled behind
+                        it, instead of being hidden by it like everything
+                        else in this body. */}
+                    <div className="relative z-10 grid min-w-225 grid-cols-[64px_repeat(7,minmax(0,1fr))]">
+                        <div
+                            className="sticky left-0 top-0 z-20 border-r border-paper-edge bg-paper/95"
+                            style={{ height: 24 * HOUR_HEIGHT }}
+                        >
                             {Array.from({ length: 24 }, (_, hour) => (
                                 <div
                                     key={hour}
@@ -848,7 +960,8 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                             return (
                                 <div
                                     key={day.toISOString()}
-                                    className="relative h-336 border-r border-paper-edge bg-paper/40"
+                                    className="relative border-r border-paper-edge bg-paper/40"
+                                    style={{ height: 24 * HOUR_HEIGHT }}
                                 >
                                     {Array.from({ length: 24 }, (_, hour) => (
                                         <div
@@ -888,6 +1001,48 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                                 height >= HOUR_HEIGHT &&
                                                 !continuesFromPrevDay &&
                                                 !coveredByLaterEvent;
+                                            // A block clamped to
+                                            // MIN_EVENT_HEIGHT has exactly
+                                            // enough room for one line of
+                                            // title and nothing else --
+                                            // dropping its vertical padding
+                                            // (below) is what makes that
+                                            // line actually fit.
+                                            const isMinHeight =
+                                                height <= MIN_EVENT_HEIGHT;
+                                            // Time range gets its own line,
+                                            // and location (when there is
+                                            // one) gets a second below it,
+                                            // rather than sharing one line.
+                                            const detailLines = showDetails
+                                                ? event.location
+                                                    ? 2
+                                                    : 1
+                                                : 0;
+                                            const detailsHeight = detailLines
+                                                ? EVENT_DETAILS_MARGIN +
+                                                  detailLines *
+                                                      EVENT_DETAIL_LINE_HEIGHT
+                                                : 0;
+                                            // How many lines the title can
+                                            // wrap onto before it has to
+                                            // start clipping -- whatever's
+                                            // left after the box's own
+                                            // padding/border and (if shown)
+                                            // the details lines below it, at
+                                            // least one line even for the
+                                            // shortest event blocks.
+                                            const titleLines = Math.max(
+                                                1,
+                                                Math.floor(
+                                                    (height -
+                                                        (isMinHeight
+                                                            ? EVENT_BOX_CHROME_MINIMAL
+                                                            : EVENT_BOX_CHROME) -
+                                                        detailsHeight) /
+                                                        EVENT_TITLE_LINE_HEIGHT,
+                                                ),
+                                            );
                                             return (
                                                 <button
                                                     key={event.id}
@@ -905,7 +1060,11 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                                             event,
                                                         );
                                                     }}
-                                                    className={`absolute flex flex-col items-start justify-start overflow-hidden border border-pin-todo/40 bg-pin-todo/70 px-2 py-1 text-left text-xs text-ink shadow-sm hover:cursor-pointer hover:bg-pin-todo/8 ${
+                                                    className={`absolute flex flex-col items-start justify-start overflow-hidden border border-pin-todo/40 bg-pin-todo/70 px-2 text-left text-xs text-ink shadow-sm hover:cursor-pointer hover:bg-pin-todo/8 ${
+                                                        isMinHeight
+                                                            ? "py-0"
+                                                            : "py-1"
+                                                    } ${
                                                         continuesFromPrevDay
                                                             ? ""
                                                             : "rounded-t-md"
@@ -922,24 +1081,47 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                                         zIndex,
                                                     }}
                                                 >
-                                                    <p className="w-full truncate font-semibold">
+                                                    <p
+                                                        className={`w-full font-semibold ${
+                                                            coveredByLaterEvent
+                                                                ? "truncate"
+                                                                : ""
+                                                        }`}
+                                                        style={
+                                                            coveredByLaterEvent
+                                                                ? undefined
+                                                                : {
+                                                                      display: "-webkit-box",
+                                                                      WebkitLineClamp:
+                                                                          titleLines,
+                                                                      WebkitBoxOrient:
+                                                                          "vertical",
+                                                                      overflow: "hidden",
+                                                                  }
+                                                        }
+                                                    >
                                                         {continuesFromPrevDay
                                                             ? "‹ "
                                                             : ""}
                                                         {event.title}
                                                     </p>
                                                     {showDetails && (
-                                                        <p className="mt-0.5 w-full whitespace-normal wrap-break-word text-[10px] leading-tight">
-                                                            {formatTime(
-                                                                new Date(
+                                                        <>
+                                                            <p className="mt-0.5 w-full truncate text-[10px] leading-tight">
+                                                                {formatEventTimeRange(
                                                                     event.startsAt,
-                                                                ),
-                                                                settings,
+                                                                    event.endsAt,
+                                                                    settings,
+                                                                )}
+                                                            </p>
+                                                            {event.location && (
+                                                                <p className="w-full truncate text-[10px] leading-tight">
+                                                                    {
+                                                                        event.location
+                                                                    }
+                                                                </p>
                                                             )}
-                                                            {event.location
-                                                                ? ` · ${event.location}`
-                                                                : ""}
-                                                        </p>
+                                                        </>
                                                     )}
                                                 </button>
                                             );
@@ -966,7 +1148,10 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
             </div>
 
             {draft && (
-                <div className="fixed inset-0 z-100 flex items-center justify-center bg-black/40 px-4">
+                <div
+                    className="fixed inset-0 z-100 flex items-center justify-center bg-black/40 px-4"
+                    onClick={dismissDraft}
+                >
                     <div className="w-full max-w-lg rounded-2xl border border-paper-edge bg-paper p-5 shadow-[0_16px_48px_rgba(0,0,0,0.35)]">
                         <div className="mb-4 flex items-center justify-between">
                             <h2 className="font-display text-lg font-semibold">
@@ -984,7 +1169,16 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                 ×
                             </button>
                         </div>
-                        <div className="space-y-3">
+                        {readOnlyCalendar && (
+                            <p className="mb-3 text-xs text-ink-soft">
+                                This calendar is view-only in Coria — you
+                                can't edit or delete its events.
+                            </p>
+                        )}
+                        <fieldset
+                            disabled={readOnlyCalendar}
+                            className="m-0 space-y-3 border-0 p-0"
+                        >
                             <label className="block space-y-1">
                                 <span className="text-xs font-semibold text-ink-soft">
                                     Title
@@ -1406,13 +1600,19 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                     className="w-full rounded-xl border border-paper-edge bg-board/40 px-3 py-2 text-sm outline-none"
                                 />
                             </label>
-                        </div>
+                        </fieldset>
+                        {draftError && (
+                            <p className="mt-3 text-xs text-pin-timer">
+                                {draftError}
+                            </p>
+                        )}
                         <div className="mt-5 flex justify-between gap-2">
                             {draft.id || draft.occurrenceEdit ? (
                                 <button
                                     type="button"
                                     onClick={() => void handleDeleteEvent()}
-                                    className="rounded-full px-4 py-2 text-sm font-semibold text-pin-timer hover:cursor-pointer hover:bg-pin-timer/10"
+                                    disabled={readOnlyCalendar}
+                                    className="rounded-full px-4 py-2 text-sm font-semibold text-pin-timer hover:cursor-pointer hover:bg-pin-timer/10 disabled:cursor-not-allowed disabled:opacity-50"
                                 >
                                     {draft.occurrenceEdit
                                         ? "Delete this event"
@@ -1432,8 +1632,11 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                 <button
                                     type="button"
                                     onClick={() => void handleSaveEvent()}
-                                    disabled={!draft.title.trim()}
-                                    className="rounded-full bg-pin-todo px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                                    disabled={
+                                        !draft.title.trim() || readOnlyCalendar
+                                    }
+                                    className="rounded-full bg-pin-todo px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50
+                                    hover:cursor-pointer"
                                 >
                                     Save
                                 </button>
@@ -1443,8 +1646,149 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                 </div>
             )}
 
+            {previewEvent &&
+                (() => {
+                    // Repeat state/labels always resolve from the master
+                    // (never the clicked occurrence itself) so a moved or
+                    // retitled single occurrence still shows the series'
+                    // own repeat pattern, same as the edit form does.
+                    const master = previewEvent.instanceOf
+                        ? (events.find(
+                              (event) => event.id === previewEvent.instanceOf,
+                          ) ?? previewEvent)
+                        : previewEvent;
+                    const repeatState = repeatStateFromRule(
+                        master.recurrenceRule,
+                        master.startsAt,
+                        eventDateZone(
+                            master,
+                            master.eventTimeZone ?? settings.timeZone,
+                        ),
+                    );
+                    const repeatLabel =
+                        repeatState.repeatPreset === "none"
+                            ? null
+                            : repeatState.repeatPreset === "custom"
+                              ? "Repeats"
+                              : describeRepeatPresets(
+                                    dateInputValue(
+                                        new Date(master.startsAt),
+                                        settings.timeZone,
+                                    ),
+                                    settings,
+                                )[repeatState.repeatPreset];
+
+                    const start = new Date(previewEvent.startsAt);
+                    const rawEnd = new Date(previewEvent.endsAt);
+                    // endsAt is exclusive for an all-day event -- the start
+                    // of the day *after* the last one it covers -- so the
+                    // day it should actually display as its last is one
+                    // instant earlier.
+                    const displayEnd = previewEvent.allDay
+                        ? new Date(rawEnd.getTime() - 1)
+                        : rawEnd;
+                    // An all-day event's instants name a floating calendar
+                    // date, so they're read in UTC rather than the viewer's
+                    // zone -- see eventDateZone in lib/calendar.ts.
+                    const previewZone = eventDateZone(
+                        previewEvent,
+                        settings.timeZone,
+                    );
+                    const spansMultipleDays = !sameCalendarDay(
+                        start,
+                        displayEnd,
+                        previewZone,
+                    );
+                    const dateLabel = spansMultipleDays
+                        ? `${formatDate(start, settings, previewZone)} – ${formatDate(displayEnd, settings, previewZone)}`
+                        : formatDate(start, settings, previewZone);
+                    const calendar = calendars.find(
+                        (item) => item.id === previewEvent.calendarId,
+                    );
+
+                    return (
+                        <div
+                            className="fixed inset-0 z-100 flex items-center justify-center bg-black/40 px-4"
+                            onClick={dismissPreview}
+                        >
+                            <div className="w-full max-w-md rounded-2xl border border-paper-edge bg-paper p-5 shadow-[0_16px_48px_rgba(0,0,0,0.35)]">
+                                <div className="mb-3 flex items-start justify-between gap-2">
+                                    <h2 className="font-display text-xl font-semibold">
+                                        {previewEvent.title}
+                                    </h2>
+                                    <button
+                                        type="button"
+                                        onClick={() => setPreviewEvent(null)}
+                                        className="shrink-0 rounded-full px-2 text-lg text-ink-soft hover:cursor-pointer hover:bg-black/5"
+                                    >
+                                        ×
+                                    </button>
+                                </div>
+                                <div className="space-y-2 text-sm text-ink">
+                                    <p>
+                                        {dateLabel}
+                                        {previewEvent.allDay
+                                            ? " · All day"
+                                            : ` · ${formatFullEventTimeRange(
+                                                  previewEvent.startsAt,
+                                                  previewEvent.endsAt,
+                                                  settings,
+                                              )}`}
+                                    </p>
+                                    {calendar && (
+                                        <p className="flex items-center gap-1.5 text-ink-soft">
+                                            <img
+                                                src="/calendar-regular-full.svg"
+                                                width={18}
+                                                height={18}
+                                                alt=""
+                                                className="shrink-0"
+                                            />
+                                            {calendar.name}
+                                        </p>
+                                    )}
+                                    {previewEvent.location && (
+                                        <p className="text-ink-soft">
+                                            {previewEvent.location}
+                                        </p>
+                                    )}
+                                    {repeatLabel && (
+                                        <p className="text-xs text-ink-soft">
+                                            ↻ {repeatLabel}
+                                        </p>
+                                    )}
+                                    {previewEvent.description && (
+                                        <p className="whitespace-pre-wrap text-ink-soft">
+                                            {previewEvent.description}
+                                        </p>
+                                    )}
+                                </div>
+                                <div className="mt-5 flex justify-end gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setPreviewEvent(null)}
+                                        className="rounded-full border border-paper-edge px-4 py-2 text-sm font-semibold hover:cursor-pointer hover:bg-black/5"
+                                    >
+                                        Close
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={handleEditFromPreview}
+                                        className="rounded-full bg-pin-todo px-4 py-2 text-sm font-semibold hover:cursor-pointer hover:bg-pin-todo/90"
+                                    >
+                                        Edit
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })()}
+
             {scopeChoice && (
-                <div className="fixed inset-0 z-100 flex items-center justify-center bg-black/40 px-4">
+                <div
+                    className="fixed inset-0 z-100 flex items-center justify-center bg-black/40 px-4"
+                    onClick={dismissScopeChoice}
+                >
                     <div className="w-full max-w-xs rounded-2xl border border-paper-edge bg-paper p-5 shadow-[0_16px_48px_rgba(0,0,0,0.35)]">
                         <h2 className="mb-1 font-display text-base font-semibold">
                             {scopeChoice.title}

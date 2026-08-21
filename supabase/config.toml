@@ -16,3 +16,19 @@ verify_jwt = false
 # reused directly as a shared function rather than over HTTP) -- Supabase
 # checks the caller's session before the function code even runs.
 verify_jwt = true
+
+[functions.google-calendar-migrate]
+# Phase 3's one-time "what happens to my existing events" flow, invoked
+# from Settings by the signed-in user it acts on.
+verify_jwt = true
+
+[functions.google-calendar-sync]
+# Phase 4's pull/push loop, invoked by the signed-in user's own client --
+# READY-08 chose polling over webhooks, so there's no unauthenticated
+# notification endpoint to leave open here.
+verify_jwt = true
+
+[functions.google-calendar-selection]
+# The "manage synced calendars" picker in Settings, invoked by the
+# signed-in user it acts on.
+verify_jwt = true

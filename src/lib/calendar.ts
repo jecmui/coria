@@ -8,6 +8,15 @@ import type {
 
 export const HOUR_HEIGHT = 56;
 export const DAY_COLUMN_MIN_WIDTH = 180;
+// The shortest an event block is ever drawn, regardless of its actual
+// duration or how small HOUR_HEIGHT is -- deliberately *not* derived from
+// HOUR_HEIGHT (unlike the old HOUR_HEIGHT/4 floor this replaces), so the
+// grid's overall density and "can the shortest event show its title" are
+// two independent knobs. 18px is exactly a text-xs line (16px) plus the
+// event box's 1px top/bottom border, with zero vertical padding -- see
+// CalendarPage.tsx, which drops padding specifically for a block clamped
+// to this height, since there's no room to spare for it here.
+export const MIN_EVENT_HEIGHT = 18;
 
 export function startOfDay(date: Date) {
     const result = new Date(date);
@@ -28,9 +37,16 @@ export function getWeekStart(date: Date, weekStart: number) {
     return result;
 }
 
-export function formatDate(date: Date, settings: CalendarSettings) {
+/** `timeZone` overrides settings.timeZone -- callers formatting an all-day
+ *  event's date pass "UTC", since those instants are floating calendar dates
+ *  rather than real instants (see eventDateZone). */
+export function formatDate(
+    date: Date,
+    settings: CalendarSettings,
+    timeZone: string = settings.timeZone,
+) {
     const parts = new Intl.DateTimeFormat("en-US", {
-        timeZone: settings.timeZone,
+        timeZone,
         year: "numeric",
         month: "2-digit",
         day: "2-digit",
@@ -50,6 +66,63 @@ export function formatTime(date: Date, settings: CalendarSettings) {
         minute: "2-digit",
         hour12: settings.timeFormat === "12h",
     }).format(date);
+}
+
+/** `date`'s wall-clock hour/minute for a compact 12-hour range endpoint --
+ *  minutes dropped entirely on the hour ("5", not "5:00"), and the AM/PM
+ *  period split out so a caller sharing one period across both ends of a
+ *  range can omit it on the first. */
+function compactTimeParts(
+    date: Date,
+    timeZone: string,
+): { hourMinute: string; period: string } {
+    const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone,
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+    }).formatToParts(date);
+    const hour = parts.find((part) => part.type === "hour")?.value ?? "12";
+    const minute = parts.find((part) => part.type === "minute")?.value ?? "00";
+    const period = parts.find((part) => part.type === "dayPeriod")?.value ?? "AM";
+    return { hourMinute: minute === "00" ? hour : `${hour}:${minute}`, period };
+}
+
+/** A timed event's start-end range, compact enough for a narrow event
+ *  block: "5:30 - 7PM", "5 - 9:15PM", "11AM - 12:30PM". In 12-hour mode,
+ *  the start time's own AM/PM is dropped whenever it matches the end
+ *  time's -- shared context a reader infers same as they would from
+ *  someone saying "five to seven" out loud. 24-hour mode has no period to
+ *  share, so both ends are just formatTime's own "HH:MM". */
+export function formatEventTimeRange(
+    startsAt: string,
+    endsAt: string,
+    settings: CalendarSettings,
+): string {
+    const start = new Date(startsAt);
+    const end = new Date(endsAt);
+    if (settings.timeFormat !== "12h") {
+        return `${formatTime(start, settings)} - ${formatTime(end, settings)}`;
+    }
+    const startParts = compactTimeParts(start, settings.timeZone);
+    const endParts = compactTimeParts(end, settings.timeZone);
+    const startLabel =
+        startParts.period === endParts.period
+            ? startParts.hourMinute
+            : `${startParts.hourMinute}${startParts.period}`;
+    return `${startLabel} - ${endParts.hourMinute}${endParts.period}`;
+}
+
+/** A timed event's start-end range in full -- "3:00 PM - 4:00 PM", never
+ *  dropping a :00 or sharing one side's AM/PM with the other -- for
+ *  contexts with room to spare, like the event preview, unlike the
+ *  space-saving formatEventTimeRange above used in narrow event blocks. */
+export function formatFullEventTimeRange(
+    startsAt: string,
+    endsAt: string,
+    settings: CalendarSettings,
+): string {
+    return `${formatTime(new Date(startsAt), settings)} - ${formatTime(new Date(endsAt), settings)}`;
 }
 
 export function formatHour(hour: number, settings: CalendarSettings) {
@@ -183,7 +256,7 @@ export function eventTopAndHeight(
 
     const top = startMinutes * (HOUR_HEIGHT / 60);
     const height = Math.max(
-        HOUR_HEIGHT / 4,
+        MIN_EVENT_HEIGHT,
         (endMinutes - startMinutes) * (HOUR_HEIGHT / 60),
     );
     return { top, height, continuesFromPrevDay, continuesToNextDay };
@@ -384,6 +457,55 @@ export function addDaysToDateValue(dateValue: string, days: number): string {
     ).padStart(2, "0")}`;
 }
 
+/** The zone an event's own start/end instants must be read in to recover the
+ *  calendar dates it was authored as.
+ *
+ *  A timed event is a real instant, so it's read in whatever zone the viewer
+ *  is displaying -- 9am in New York genuinely is 6am in Los Angeles. An
+ *  all-day event is not an instant at all: it's a floating calendar date, the
+ *  same way Google models it ({ date: "2026-08-31" }, no zone attached). Coria
+ *  stores that date as UTC midnight purely as a carrier, so it must be read
+ *  back in UTC too -- reading it in the viewer's zone is what makes an Aug 31
+ *  all-day event render as Aug 30-31 for anyone west of UTC. */
+export function eventDateZone(
+    event: Pick<CalendarEvent, "allDay">,
+    timeZone: string,
+): string {
+    return event.allDay ? "UTC" : timeZone;
+}
+
+/** Whether an event's [startsAt, endsAt) span touches the visible window
+ *  [rangeStart, rangeEnd) at all.
+ *
+ *  A timed event is compared as instants, which is what it is. An all-day
+ *  event can't be: it's anchored to UTC midnight while the range's bounds are
+ *  local midnights, so comparing the two as instants counts an event as
+ *  in-range for up to a whole UTC offset before it actually starts -- an
+ *  all-day event on the 7th leaking into a window ending on the 6th for any
+ *  viewer west of UTC. Comparing calendar dates in each side's own zone is
+ *  the same thing eventOverlapsDay does, one day wider. */
+export function eventOverlapsRange(
+    event: CalendarEvent,
+    rangeStart: Date,
+    rangeEnd: Date,
+    timeZone: string,
+): boolean {
+    const start = new Date(event.startsAt);
+    const end = new Date(event.endsAt);
+    if (!event.allDay) return start < rangeEnd && end > rangeStart;
+    const zone = eventDateZone(event, timeZone);
+    const startValue = dateInputValue(start, zone);
+    const endValue = dateInputValue(new Date(end.getTime() - 1), zone);
+    // rangeEnd is exclusive, so the last day it actually covers is the one an
+    // instant earlier -- same step-back as the event's own inclusive end.
+    const rangeStartValue = dateInputValue(rangeStart, timeZone);
+    const rangeEndValue = dateInputValue(
+        new Date(rangeEnd.getTime() - 1),
+        timeZone,
+    );
+    return startValue <= rangeEndValue && endValue >= rangeStartValue;
+}
+
 /** Whether an event's [startsAt, endsAt) span touches `day` at all, comparing
  *  calendar dates rather than exact instants -- used both to place all-day
  *  bars under a day's header and to decide which timed events get a slice
@@ -393,11 +515,14 @@ export function eventOverlapsDay(
     day: Date,
     timeZone: string,
 ): boolean {
+    // `day` is always a real local instant, so it names its date in the
+    // viewer's zone; the event's own bounds use eventDateZone above.
     const dayValue = dateInputValue(day, timeZone);
-    const startValue = dateInputValue(new Date(event.startsAt), timeZone);
+    const eventZone = eventDateZone(event, timeZone);
+    const startValue = dateInputValue(new Date(event.startsAt), eventZone);
     const endValue = dateInputValue(
         new Date(new Date(event.endsAt).getTime() - 1),
-        timeZone,
+        eventZone,
     );
     return dayValue >= startValue && dayValue <= endValue;
 }
@@ -427,14 +552,27 @@ export function layoutAllDayEvents(
 
     const spans = events
         .map((event) => {
+            const eventZone = eventDateZone(event, timeZone);
             const startValue = dateInputValue(
                 new Date(event.startsAt),
-                timeZone,
+                eventZone,
             );
             const endValue = dateInputValue(
                 new Date(new Date(event.endsAt).getTime() - 1),
-                timeZone,
+                eventZone,
             );
+            // An event lying entirely outside the visible days has no bar to
+            // draw. Clamping it into range instead would stretch it across
+            // every column: findIndex returns -1 for an event starting after
+            // the last visible day, and the endCol scan finds no day at or
+            // before an event ending before the first, so both would collapse
+            // to "spans the whole view".
+            if (
+                endValue < dayValues[0] ||
+                startValue > dayValues[dayValues.length - 1]
+            ) {
+                return null;
+            }
             const foundStart = dayValues.findIndex(
                 (value) => value >= startValue,
             );
@@ -448,6 +586,10 @@ export function layoutAllDayEvents(
             }
             return { event, startCol, endCol };
         })
+        .filter(
+            (span): span is { event: CalendarEvent; startCol: number; endCol: number } =>
+                span !== null,
+        )
         .sort((a, b) => {
             const aMultiDay = a.endCol > a.startCol;
             const bMultiDay = b.endCol > b.startCol;
@@ -714,11 +856,19 @@ export function expandRecurringEvents(
         const end = new Date(event.endsAt);
 
         if (!event.recurrenceRule) {
-            if (start < rangeEnd && end > rangeStart) result.push(event);
+            if (eventOverlapsRange(event, rangeStart, rangeEnd, timeZone)) {
+                result.push(event);
+            }
             continue;
         }
 
-        const eventTimeZone = event.eventTimeZone ?? timeZone;
+        // An all-day series is anchored to UTC midnight (eventDateZone), so
+        // it has to be expanded in UTC too -- reading those instants in a
+        // real zone would land every occurrence on the wrong calendar day,
+        // and with it the wrong weekday for a BYDAY rule.
+        const eventTimeZone = event.allDay
+            ? "UTC"
+            : (event.eventTimeZone ?? timeZone);
         const durationMs = end.getTime() - start.getTime();
         // An occurrence starting just before rangeStart can still overlap
         // it once its own duration is accounted for.
@@ -756,8 +906,19 @@ export function expandRecurringEvents(
             const endsAt =
                 exception?.endsAt ??
                 new Date(occStart.getTime() + durationMs).toISOString();
-            const occEnd = new Date(endsAt);
-            if (occStart >= rangeEnd || occEnd <= rangeStart) continue;
+            const occAllDay = exception?.allDay ?? event.allDay;
+            // Same date-vs-instant distinction as the non-recurring branch
+            // above, applied per occurrence.
+            if (
+                !eventOverlapsRange(
+                    { ...event, allDay: occAllDay, startsAt, endsAt },
+                    rangeStart,
+                    rangeEnd,
+                    timeZone,
+                )
+            ) {
+                continue;
+            }
 
             result.push({
                 ...event,
@@ -767,7 +928,7 @@ export function expandRecurringEvents(
                 location: exception?.location ?? event.location,
                 startsAt,
                 endsAt,
-                allDay: exception?.allDay ?? event.allDay,
+                allDay: occAllDay,
                 instanceOf: event.id,
                 originalStartTime: occStartIso,
                 exceptionId: exception?.id,

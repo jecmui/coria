@@ -10,7 +10,8 @@ create table tasks (
   created_at timestamptz not null default now()
 );
 
--- Board widgets: layout + type-specific data stored as jsonb, mirroring BoardWidget in types/index.ts
+-- Board widgets: where each one sits, plus whatever data its own type needs.
+-- Mirrors BoardWidget in types/index.ts.
 create table board_widgets (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -47,7 +48,7 @@ on profiles for all
 using (auth.uid() = id)
 with check (auth.uid() = id);
 
--- Auto-create a profile row (with first_name pulled from signup metadata) whenever a new auth user is created
+-- Give every new user a profile row, with first_name taken from signup.
 create function public.handle_new_user()
 returns trigger as $$
 begin
@@ -71,8 +72,8 @@ alter table profiles
   add column auto_start_breaks boolean not null default false,
   add column auto_start_focus boolean not null default false;
 
-  -- Calendar preferences: display settings are kept on the user's profile so they
--- can be reused by the board widget, full calendar page, and future integrations.
+-- Calendar display settings, kept on the profile so the board widget and the
+-- calendar page can share them.
 alter table profiles
   add column calendar_week_start smallint not null default 0,
   add column calendar_date_format text not null default 'MM/DD/YYYY',
@@ -105,9 +106,8 @@ on calendar_events for all
 using (auth.uid() = user_id)
 with check (auth.uid() = user_id);
 
--- Connection metadata for future external calendar providers. OAuth access and
--- refresh tokens should be kept in a trusted backend, not in a client-readable
--- table. This table records which external calendar is connected and its sync state.
+-- Which external calendar account is connected, and how its sync is going.
+-- Tokens are deliberately not stored here -- see calendar_connection_secrets.
 create table calendar_connections (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -141,10 +141,8 @@ alter table tasks
 alter table board_widgets
   add column mobile_order integer not null default 0;
 
--- Appearance settings. Color columns are only meaningful when
--- appearance_theme = 'custom' -- Light/Dark/System resolve to built-in
--- palettes in code instead. Nullable, falling back to the light defaults in
--- code, same as calendar_time_zone above.
+-- Appearance settings. The colour columns only apply when the theme is
+-- 'custom'; Light/Dark/System use built-in palettes instead.
 alter table profiles
   add column appearance_theme text not null default 'light',
   add column appearance_color_board text,
@@ -159,11 +157,8 @@ alter table profiles
   add column appearance_color_pin_image text,
   add column appearance_color_pin_calendar text;
 
--- User preferences: every editable setting now lives here instead of on
--- `profiles`, which is back to being identity only (first_name). Column names
--- drop the old `calendar_`/`appearance_` prefixes -- the table itself is the
--- namespace now. Colors stay nullable and are only meaningful when
--- theme = 'custom', same as before.
+-- Every editable setting moves here, leaving `profiles` as identity only.
+-- Column names drop their old calendar_/appearance_ prefixes.
 create table user_preferences (
   user_id uuid primary key references auth.users(id) on delete cascade,
 
@@ -278,13 +273,8 @@ alter table profiles
 alter table user_preferences
   add column snap_to_grid boolean not null default false;
 
--- Today-widget clearing, edited from Settings > Board > Today. "manual" leaves
--- clearing to right-clicking the Today widget; "automatic" also clears it on
--- its own once a day at today_clear_time (in today_clear_time_zone), either
--- every focused task or just the done ones per today_clear_scope.
--- today_last_auto_clear_date records the last date the automatic clear ran
--- (client-evaluated, since there's no backend scheduler) so it only fires
--- once per day even across reloads.
+-- Today-widget clearing (Settings > Board > Today): by hand, or once a day at
+-- a set time. The last-run date stops it clearing twice in one day.
 alter table user_preferences
   add column today_clear_mode text not null default 'manual',
   add column today_clear_time text not null default '18:00',
@@ -292,61 +282,36 @@ alter table user_preferences
   add column today_clear_scope text not null default 'completed',
   add column today_last_auto_clear_date date;
 
--- Groundwork for Google Calendar sync. `source` distinguishes locally-created
--- events from ones mirrored from an external provider; `external_id` maps a
--- mirrored event back to that provider's event id for updates and deletes,
--- and is only meaningful when source != 'local'. `all_day` flags date-only
--- events with no specific time, as Google Calendar represents them.
+-- Google sync groundwork: where an event came from, what its id is over
+-- there, and whether it's an all-day event with no particular time.
 alter table calendar_events
   add column source text not null default 'local',
   add column external_id text,
   add column all_day boolean not null default false;
 
--- Recurrence: a recurring event is stored as a single row whose starts_at/
--- ends_at describe its first occurrence; recurrence_rule holds a bare RFC
--- 5545 RRULE value (no DTSTART line -- the row's own starts_at is the
--- anchor). Null for non-recurring events. UNTIL/COUNT, when present, live
--- inside this string per RFC 5545 -- no separate "ends" columns needed.
+-- A repeating event is one row: starts_at/ends_at are its first occurrence,
+-- and recurrence_rule describes how it repeats. Null when it doesn't.
 alter table calendar_events
   add column recurrence_rule text;
 
--- Today-widget sorting, edited from Settings > Board > Today alongside the
--- clearing settings above. When on, the Today widget dynamically keeps done
--- tasks below not-done ones (each group still ordered by sort_order) instead
--- of leaving done tasks wherever they were in the list.
+-- Today-widget sorting (Settings > Board > Today): when on, finished tasks
+-- drop below unfinished ones instead of staying where they were.
 alter table user_preferences
   add column today_sort_completed_to_bottom boolean not null default false;
 
--- Two-way sync groundwork. `dirty` marks a row whose local state hasn't
--- been pushed to its external provider yet -- set on every local
--- create/edit/delete, meant to be cleared once a future sync successfully
--- pushes it. `deleted_at` is a tombstone for local deletes: the row is
--- soft-deleted (excluded from every query the app runs, same as if it were
--- gone) rather than hard-deleted, so a future sync can still see it existed
--- and push the deletion to the external provider before the row is
--- actually purged.
+-- Two-way sync groundwork: `dirty` flags local changes not yet sent to
+-- Google, and `deleted_at` hides a deleted row until that delete is sent.
 alter table calendar_events
   add column dirty boolean not null default false,
   add column deleted_at timestamptz;
 
--- Google returns each event's own authoring time zone (start.timeZone),
--- which isn't always the calendar's default -- null for locally-created
--- events, which are authored in the calendar's own time zone. starts_at/
--- ends_at are already timezone-independent UTC instants, so this only
--- matters for expanding a *recurring* event's RRULE: its wall-clock
--- occurrences must be computed in the zone it was actually authored in
--- (falling back to the calendar's time zone setting when this is null),
--- not unconditionally in the calendar's -- otherwise a cross-timezone
--- recurring series can drift by an hour during DST-mismatch weeks.
+-- The time zone an event was written in, as Google reports it. Only needed
+-- to work out a repeating event's occurrences; null for events made here.
 alter table calendar_events
   add column event_time_zone text;
 
--- Calendars: introduces multi-calendar support ahead of Google Calendar
--- sync, where an account can have several calendars (primary, secondary,
--- shared) instead of every event hanging directly off user_id. is_primary
--- marks the one auto-created for every user (see handle_new_user below) and
--- is where an event lands when no calendar is chosen. external_calendar_id
--- maps this row to a synced provider calendar, null for a purely local one.
+-- Lets a user have several calendars instead of events hanging off user_id.
+-- is_primary is the default one; external_calendar_id links it to Google.
 create table calendars (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -408,11 +373,8 @@ begin
 end;
 $$ language plpgsql security definer;
 
--- updated_at trustworthiness: nothing currently bumps this column on edit,
--- but two-way sync's conflict resolution (last-write-wins) needs to compare
--- it against Google's own `updated` timestamp, so it has to reflect the
--- real last write regardless of which code path performed it, not rely on
--- every future write remembering to set it.
+-- Keeps updated_at correct on every write, whatever changed the row --
+-- sync compares it with Google's own timestamp to settle conflicts.
 create function public.set_updated_at()
 returns trigger as $$
 begin
@@ -433,19 +395,8 @@ create trigger calendars_set_updated_at
   before update on calendars
   for each row execute function public.set_updated_at();
 
--- READY-04: recurring-event exceptions. A single occurrence of a series can
--- be edited or cancelled independently of the rest of it -- Google models
--- this exactly the same way, as a row carrying recurringEventId +
--- originalStartTime. master_event_id points at the recurring
--- calendar_events row; original_start_time identifies which occurrence (by
--- its un-modified starts_at, before any override) this row replaces --
--- together they're unique, since a series can only have one exception per
--- occurrence. A cancelled occurrence sets is_cancelled and leaves every
--- other nullable column empty; a modified one fills in whichever of
--- title/description/location/starts_at/ends_at/all_day it overrides,
--- entirely independent of the master row's own values. dirty/deleted_at/
--- external_id mirror calendar_events' own two-way-sync groundwork, since an
--- exception is itself a syncable unit once sync exists.
+-- A single occurrence of a repeating event, edited or cancelled on its own.
+-- master_event_id is the series; original_start_time picks the occurrence.
 create table calendar_event_exceptions (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -486,37 +437,16 @@ create trigger calendar_event_exceptions_set_updated_at
   before update on calendar_event_exceptions
   for each row execute function public.set_updated_at();
 
--- READY-05: holds each event's (or exception's) last-known raw Google
--- Calendar API object verbatim -- attendees, reminders, conferenceData,
--- colorId, visibility, and anything else Coria's own schema doesn't have a
--- column for. Null for locally-created rows, since there's nothing to hold
--- yet. Only ever refreshed by a future pull; a local edit through Coria
--- only ever touches the columns above (title, starts_at, ...), never this
--- one, so it's never included in a local update's payload and rides
--- through untouched -- see mergeGoogleEventPatch in lib/calendar.ts for how
--- a future push is meant to merge Coria's own changes back into it instead
--- of overwriting the whole event with only what Coria tracks.
+-- The last event Google sent us, stored as-is: attendees, reminders, and
+-- anything else Coria has no column for, so editing here doesn't lose them.
 alter table calendar_events
   add column external_raw jsonb;
 
 alter table calendar_event_exceptions
   add column external_raw jsonb;
 
--- READY-06: OAuth tokens live here, never on calendar_connections itself.
--- calendar_connections stays client-readable by design (its own policies
--- above let a user select/manage their own row, so the UI can show
--- "Connected") -- fine for metadata, but wrong for a token, since RLS is
--- row-level, not column-level, and the browser only ever holds the
--- anon/authenticated key. This table enables RLS and deliberately defines
--- no policy for anon/authenticated at all: Postgres denies by default once
--- RLS is on and nothing matches, so there's no query the browser could
--- send that would return a row. Only Supabase's service_role key -- which
--- bypasses RLS entirely and only ever lives as an env var on a trusted
--- backend, never in the client bundle -- can read or write this table.
--- That backend is the Supabase Edge Functions from the Google Calendar
--- integration's Phase 1 (google-oauth-callback writes here after the
--- initial token exchange; google-token-refresh and google-calendar-sync
--- read/refresh from here on every later call).
+-- Google sign-in tokens, kept out of the browser-readable tables above.
+-- Security is on with no access rule, so only the server key can touch it.
 create table calendar_connection_secrets (
   connection_id uuid primary key references calendar_connections(id) on delete cascade,
   access_token text not null,
@@ -533,14 +463,8 @@ create trigger calendar_connection_secrets_set_updated_at
   before update on calendar_connection_secrets
   for each row execute function public.set_updated_at();
 
--- READY-07: external_calendar_id belongs on `calendars` (READY-01) now,
--- not here -- a connection is one Google *account*, which can hold several
--- calendars, so a single external_calendar_id column on the connection
--- row can't represent that; each calendar's own row maps to its own
--- Google calendar instead. Backfilled onto the user's primary calendar
--- first so nothing is silently lost if this ever runs against a
--- connection that already has one -- in practice there shouldn't be any
--- yet, since no OAuth flow exists to have written one.
+-- One Google account can hold several calendars, so the link to a specific
+-- calendar moves onto `calendars`. Copied across first so nothing is lost.
 update calendars c
 set external_calendar_id = cc.external_calendar_id
 from calendar_connections cc
@@ -552,28 +476,13 @@ where cc.user_id = c.user_id
 alter table calendar_connections
   drop column external_calendar_id;
 
--- READY-08 sync trigger model: polling, not webhooks, for v1. A client
--- checking in (on load, on a timer, or a manual "Sync now") needs nothing
--- beyond the OAuth endpoint Phase 1 already builds; webhooks need a
--- standing public HTTPS endpoint, channel renewal, and notification
--- verification -- real complexity worth deferring until the core pull/push
--- loop is proven. poll_interval_seconds is how often a background sync
--- pass should run for this connection; last_synced_at (above) is what a
--- poll compares its own clock against to decide whether it's due. Revisit
--- this table (e.g. a webhook_channel_id / webhook_expires_at pair) if
--- webhooks are ever picked up as the later upgrade.
+-- Sync checks in on a timer rather than waiting for Google to call us.
+-- This is how often to check; last_synced_at above says when it last did.
 alter table calendar_connections
   add column poll_interval_seconds integer not null default 300;
 
--- Phase 1: a short-lived, single-use nonce binding a Google OAuth flow back
--- to the Coria user who started it. The "Connect Google Calendar" button
--- (Phase 2) inserts a row for itself -- RLS below lets a user create only
--- their own -- then sends that row's id to Google as the `state` param.
--- Google's redirect back to google-oauth-callback is a plain browser
--- navigation, not an authenticated fetch, so it carries no Supabase
--- session; the callback resolves *which* user this is purely by looking
--- this row up (service-role only -- see the missing select/delete policy
--- below), then deletes it so the same state can't be replayed.
+-- A short-lived, one-use ticket tying a Google sign-in back to whoever
+-- started it, since Google's redirect back to us carries no login session.
 create table google_oauth_states (
   state uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -585,3 +494,42 @@ alter table google_oauth_states enable row level security;
 create policy "Users create own oauth state"
 on google_oauth_states for insert
 with check (auth.uid() = user_id);
+
+-- Where the last sync finished for this calendar, so the next one asks
+-- Google only for what has changed since. Null means start from scratch.
+alter table calendars
+  add column sync_token text;
+
+-- Like calendar_events.dirty: a calendar made here but not yet in Google.
+-- Nothing sets it yet, since there's no way to create a calendar in Coria.
+alter table calendars
+  add column dirty boolean not null default false;
+
+-- Which site the sign-in started from, so we send the user back there
+-- afterwards -- before this, signing in on localhost landed on production.
+alter table google_oauth_states
+  add column return_origin text;
+
+-- Allow an event with no duration: the end may equal the start, just never
+-- come before it. Both checks change from `>` to `>=` to match.
+alter table calendar_events
+  drop constraint calendar_events_valid_time,
+  add constraint calendar_events_valid_time check (ends_at >= starts_at);
+
+alter table calendar_event_exceptions
+  drop constraint calendar_event_exceptions_modified_fields_check,
+  add constraint calendar_event_exceptions_modified_fields_check check (
+    is_cancelled or (
+      title is not null and starts_at is not null and ends_at is not null
+      and ends_at >= starts_at
+    )
+  );
+
+-- "Manage synced calendars" lets a user pull from any Google calendar they
+-- can see. is_writable is false for view-only ones, which Coria won't edit.
+alter table calendars
+  add column is_writable boolean not null default true;
+
+-- All-day events are plain dates, so they now sit at UTC rather than the
+-- user's zone, which could shift them a day. Clearing the token re-pulls.
+update calendars set sync_token = null where external_calendar_id is not null;

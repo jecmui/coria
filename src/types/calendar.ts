@@ -11,6 +11,13 @@ export interface Calendar {
     color: string | null;
     isPrimary: boolean;
     externalCalendarId: string | null;
+    /** Whether Coria can actually write to the linked Google calendar --
+     *  false for one added read-only through the "manage synced calendars"
+     *  picker (Settings > Calendar). Always true for a purely local
+     *  calendar. CalendarPage.tsx checks this before letting an event be
+     *  edited or deleted, since a change to one Coria can't write back
+     *  would just fail at Google on the next push. */
+    isWritable: boolean;
 }
 
 export interface CalendarEvent {
@@ -105,6 +112,19 @@ export interface EventException {
      *  exception is itself a syncable Google event once it has an
      *  externalId, so it needs the same verbatim-hold-and-merge treatment. */
     externalRaw: Record<string, unknown> | null;
+}
+
+/** Phase 2: whether (and as which Google account) the signed-in user has
+ *  connected Google Calendar. providerAccountId is the connected account's
+ *  email, populated by google-oauth-callback from its primary calendar's
+ *  own id. Absent (null from loadGoogleConnection) when never connected. */
+export interface GoogleConnection {
+    id: string;
+    providerAccountId: string | null;
+    /** READY-08's polling cadence: how often a background sync pass should
+     *  run for this connection, since Coria polls rather than receiving
+     *  webhooks from Google. */
+    pollIntervalSeconds: number;
 }
 
 export interface CalendarSettings {

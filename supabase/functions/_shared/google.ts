@@ -94,6 +94,176 @@ export async function fetchPrimaryCalendarId(
     return data.id as string;
 }
 
+const CALENDAR_API = "https://www.googleapis.com/calendar/v3";
+
+/** Thrown when Google rejects a stored syncToken as too old (HTTP 410).
+ *  The documented recovery is to drop the token and re-list the calendar
+ *  in full, which is exactly what google-calendar-sync does with this. */
+export class SyncTokenExpiredError extends Error {
+    constructor() {
+        super("Google sync token expired");
+        this.name = "SyncTokenExpiredError";
+    }
+}
+
+async function googleFetch(
+    accessToken: string,
+    path: string,
+    init: RequestInit = {},
+): Promise<unknown> {
+    const response = await fetch(`${CALENDAR_API}${path}`, {
+        ...init,
+        headers: {
+            ...init.headers,
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+        },
+    });
+    if (response.status === 410) throw new SyncTokenExpiredError();
+    if (!response.ok) {
+        throw new Error(
+            `Google Calendar API ${init.method ?? "GET"} ${path} failed: ` +
+                `${response.status} ${await response.text()}`,
+        );
+    }
+    // events.delete answers 204 with an empty body.
+    if (response.status === 204) return null;
+    return response.json();
+}
+
+export interface GoogleCalendarListEntry {
+    id: string;
+    summary: string;
+    primary?: boolean;
+    accessRole: string;
+}
+
+/** The user's own Google calendars, for Phase 3's "add them to an existing
+ *  calendar" option. Filtered to the ones they can actually write to --
+ *  offering a read-only shared calendar as a migration target would only
+ *  fail later, at the first push. */
+export async function listWritableCalendars(
+    accessToken: string,
+): Promise<GoogleCalendarListEntry[]> {
+    const data = (await googleFetch(
+        accessToken,
+        "/users/me/calendarList?minAccessRole=writer",
+    )) as { items?: GoogleCalendarListEntry[] };
+    return data.items ?? [];
+}
+
+/** Every calendar the user has access to, for the "manage synced calendars"
+ *  picker (Settings > Calendar) -- unlike listWritableCalendars, this
+ *  includes calendars they can only view (a subscribed holiday calendar, a
+ *  shared read-only team calendar), since pulling events in doesn't need
+ *  write access. Each entry's own accessRole is what the caller uses to
+ *  decide is_writable when linking one. */
+export async function listAllCalendars(
+    accessToken: string,
+): Promise<GoogleCalendarListEntry[]> {
+    const data = (await googleFetch(
+        accessToken,
+        "/users/me/calendarList",
+    )) as { items?: GoogleCalendarListEntry[] };
+    return data.items ?? [];
+}
+
+/** Phase 3's "create a new calendar for these events" option. */
+export async function createCalendar(
+    accessToken: string,
+    summary: string,
+    timeZone: string,
+): Promise<GoogleCalendarListEntry> {
+    return (await googleFetch(accessToken, "/calendars", {
+        method: "POST",
+        body: JSON.stringify({ summary, timeZone }),
+    })) as GoogleCalendarListEntry;
+}
+
+export interface GoogleEventsPage {
+    items: Record<string, unknown>[];
+    nextPageToken?: string;
+    nextSyncToken?: string;
+}
+
+/** One page of a calendar's events.
+ *
+ *  singleEvents is deliberately left off (false): Coria stores a recurring
+ *  series as one master row plus rows in calendar_event_exceptions, which
+ *  is exactly the shape Google returns in this mode -- masters carrying
+ *  `recurrence`, and per-occurrence overrides carrying `recurringEventId`
+ *  + `originalStartTime`. Asking Google to pre-expand instances instead
+ *  would flatten that back into thousands of standalone rows.
+ *
+ *  showDeleted is required for incremental syncs to report deletions at
+ *  all -- without it a cancelled event simply vanishes from the response
+ *  and the local copy would linger forever. */
+export async function listEventsPage(
+    accessToken: string,
+    calendarId: string,
+    options: { syncToken?: string | null; pageToken?: string },
+): Promise<GoogleEventsPage> {
+    const params = new URLSearchParams({
+        showDeleted: "true",
+        maxResults: "250",
+    });
+    if (options.syncToken) params.set("syncToken", options.syncToken);
+    if (options.pageToken) params.set("pageToken", options.pageToken);
+    const data = (await googleFetch(
+        accessToken,
+        `/calendars/${encodeURIComponent(calendarId)}/events?${params}`,
+    )) as GoogleEventsPage;
+    return { ...data, items: data.items ?? [] };
+}
+
+export async function insertEvent(
+    accessToken: string,
+    calendarId: string,
+    body: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+    return (await googleFetch(
+        accessToken,
+        `/calendars/${encodeURIComponent(calendarId)}/events`,
+        { method: "POST", body: JSON.stringify(body) },
+    )) as Record<string, unknown>;
+}
+
+export async function updateEvent(
+    accessToken: string,
+    calendarId: string,
+    eventId: string,
+    body: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+    return (await googleFetch(
+        accessToken,
+        `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+        { method: "PUT", body: JSON.stringify(body) },
+    )) as Record<string, unknown>;
+}
+
+/** Deletes an event, treating "already gone" as success -- a 404 here means
+ *  the deletion this push exists to perform has effectively happened, and
+ *  failing the whole sync over it would just retry forever. */
+export async function deleteEvent(
+    accessToken: string,
+    calendarId: string,
+    eventId: string,
+): Promise<void> {
+    const response = await fetch(
+        `${CALENDAR_API}/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+        {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${accessToken}` },
+        },
+    );
+    if (response.ok || response.status === 404 || response.status === 410) {
+        return;
+    }
+    throw new Error(
+        `Google Calendar delete failed: ${response.status} ${await response.text()}`,
+    );
+}
+
 /** Returns a definitely-usable access token for a connection, refreshing
  *  and persisting a new one first if the stored one is expired or close
  *  to it. The one place both google-token-refresh and (later) Phase 4's
