@@ -8,6 +8,15 @@ import type {
 
 export const HOUR_HEIGHT = 56;
 export const DAY_COLUMN_MIN_WIDTH = 180;
+// The shortest an event block is ever drawn, regardless of its actual
+// duration or how small HOUR_HEIGHT is -- deliberately *not* derived from
+// HOUR_HEIGHT (unlike the old HOUR_HEIGHT/4 floor this replaces), so the
+// grid's overall density and "can the shortest event show its title" are
+// two independent knobs. 18px is exactly a text-xs line (16px) plus the
+// event box's 1px top/bottom border, with zero vertical padding -- see
+// CalendarPage.tsx, which drops padding specifically for a block clamped
+// to this height, since there's no room to spare for it here.
+export const MIN_EVENT_HEIGHT = 18;
 
 export function startOfDay(date: Date) {
     const result = new Date(date);
@@ -50,6 +59,51 @@ export function formatTime(date: Date, settings: CalendarSettings) {
         minute: "2-digit",
         hour12: settings.timeFormat === "12h",
     }).format(date);
+}
+
+/** `date`'s wall-clock hour/minute for a compact 12-hour range endpoint --
+ *  minutes dropped entirely on the hour ("5", not "5:00"), and the AM/PM
+ *  period split out so a caller sharing one period across both ends of a
+ *  range can omit it on the first. */
+function compactTimeParts(
+    date: Date,
+    timeZone: string,
+): { hourMinute: string; period: string } {
+    const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone,
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+    }).formatToParts(date);
+    const hour = parts.find((part) => part.type === "hour")?.value ?? "12";
+    const minute = parts.find((part) => part.type === "minute")?.value ?? "00";
+    const period = parts.find((part) => part.type === "dayPeriod")?.value ?? "AM";
+    return { hourMinute: minute === "00" ? hour : `${hour}:${minute}`, period };
+}
+
+/** A timed event's start-end range, compact enough for a narrow event
+ *  block: "5:30 - 7PM", "5 - 9:15PM", "11AM - 12:30PM". In 12-hour mode,
+ *  the start time's own AM/PM is dropped whenever it matches the end
+ *  time's -- shared context a reader infers same as they would from
+ *  someone saying "five to seven" out loud. 24-hour mode has no period to
+ *  share, so both ends are just formatTime's own "HH:MM". */
+export function formatEventTimeRange(
+    startsAt: string,
+    endsAt: string,
+    settings: CalendarSettings,
+): string {
+    const start = new Date(startsAt);
+    const end = new Date(endsAt);
+    if (settings.timeFormat !== "12h") {
+        return `${formatTime(start, settings)} - ${formatTime(end, settings)}`;
+    }
+    const startParts = compactTimeParts(start, settings.timeZone);
+    const endParts = compactTimeParts(end, settings.timeZone);
+    const startLabel =
+        startParts.period === endParts.period
+            ? startParts.hourMinute
+            : `${startParts.hourMinute}${startParts.period}`;
+    return `${startLabel} - ${endParts.hourMinute}${endParts.period}`;
 }
 
 export function formatHour(hour: number, settings: CalendarSettings) {
@@ -183,7 +237,7 @@ export function eventTopAndHeight(
 
     const top = startMinutes * (HOUR_HEIGHT / 60);
     const height = Math.max(
-        HOUR_HEIGHT / 4,
+        MIN_EVENT_HEIGHT,
         (endMinutes - startMinutes) * (HOUR_HEIGHT / 60),
     );
     return { top, height, continuesFromPrevDay, continuesToNextDay };

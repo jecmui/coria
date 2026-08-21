@@ -618,3 +618,19 @@ alter table calendars
 -- back to APP_URL rather than failing outright.
 alter table google_oauth_states
   add column return_origin text;
+
+-- A zero-duration ("point in time") event is now allowed -- an end equal
+-- to its start, just never before it. Both check constraints move from a
+-- strict `>` to `>=` to match.
+alter table calendar_events
+  drop constraint calendar_events_valid_time,
+  add constraint calendar_events_valid_time check (ends_at >= starts_at);
+
+alter table calendar_event_exceptions
+  drop constraint calendar_event_exceptions_modified_fields_check,
+  add constraint calendar_event_exceptions_modified_fields_check check (
+    is_cancelled or (
+      title is not null and starts_at is not null and ends_at is not null
+      and ends_at >= starts_at
+    )
+  );

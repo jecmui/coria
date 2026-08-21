@@ -20,13 +20,14 @@ import {
     eventOverlapsDay,
     floatingUtcToDateValue,
     formatDayName,
+    formatEventTimeRange,
     formatHour,
     formatMonthDay,
-    formatTime,
     getWeekStart,
     inputValuesToUtcIso,
     layoutAllDayEvents,
     layoutTimedEventsForDay,
+    MIN_EVENT_HEIGHT,
     ordinalWeekdayOfMonth,
     sameCalendarDay,
     timeInputValue,
@@ -265,6 +266,21 @@ const ALL_DAY_BAR_HEIGHT = 23;
 const ALL_DAY_OVERFLOW_THRESHOLD = 3;
 /** How many of an overflowing day's events stay visible before truncating. */
 const ALL_DAY_VISIBLE_WHEN_COLLAPSED = 2;
+/** Line height (px) of a timed event's title text (text-xs). */
+const EVENT_TITLE_LINE_HEIGHT = 16;
+/** Vertical space (px) inside a timed event block that isn't available to
+ *  its title -- the py-1 padding (8px) plus the 1px border on each edge. */
+const EVENT_BOX_CHROME = 10;
+/** Same, for a block clamped to MIN_EVENT_HEIGHT -- just the 1px top/bottom
+ *  border, no vertical padding at all (see the block below), since at
+ *  MIN_EVENT_HEIGHT there's only exactly enough room for one line of title
+ *  and nothing to spare for it. */
+const EVENT_BOX_CHROME_MINIMAL = 2;
+/** Vertical space (px) of one text-[10px] leading-tight details line (the
+ *  time range, or the location, each on their own line below the title). */
+const EVENT_DETAIL_LINE_HEIGHT = 13;
+/** Vertical space (px) above the first details line -- its own mt-0.5. */
+const EVENT_DETAILS_MARGIN = 2;
 
 export function CalendarPage({ onBack }: CalendarPageProps) {
     const {
@@ -282,6 +298,15 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
     } = useCalendarStore();
     const [currentDate, setCurrentDate] = useState(new Date());
     const [draft, setDraft] = useState<EventDraft | null>(null);
+    const [draftError, setDraftError] = useState<string | null>(null);
+    // Every setDraft call (opening the modal fresh, editing a field, or
+    // closing it) creates a new draft object -- clearing the error on any
+    // of those means a stale message from a previous attempt never lingers
+    // into a new one, and a validation error clears itself the moment the
+    // user starts fixing the field it complained about.
+    useEffect(() => {
+        setDraftError(null);
+    }, [draft]);
     // Set when a clicked occurrence belongs to a recurring series, so the
     // user is asked "this event" vs "all events" before a draft is ever
     // opened -- that choice decides both how the draft loads and what its
@@ -461,13 +486,19 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
     }
 
     async function handleSaveEvent() {
-        if (
-            !draft?.title.trim() ||
-            !draft.startDate ||
-            !draft.endDate ||
-            (!draft.allDay && (!draft.startTime || !draft.endTime))
-        )
+        if (!draft) return;
+        if (!draft.title.trim()) {
+            setDraftError("Title is required.");
             return;
+        }
+        if (!draft.startDate || !draft.endDate) {
+            setDraftError("Start and end dates are required.");
+            return;
+        }
+        if (!draft.allDay && (!draft.startTime || !draft.endTime)) {
+            setDraftError("Start and end times are required.");
+            return;
+        }
         // All-day events ignore the time-of-day inputs and instead span the
         // full day(s) from startDate through endDate, exclusive end (the
         // start of the day after endDate), matching Google Calendar.
@@ -489,7 +520,10 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                   draft.endTime,
                   settings.timeZone,
               );
-        if (new Date(endsAt) <= new Date(startsAt)) return;
+        if (new Date(endsAt) < new Date(startsAt)) {
+            setDraftError("End can't be before start.");
+            return;
+        }
 
         if (draft.occurrenceEdit) {
             const saved = await saveEventException(
@@ -504,7 +538,11 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                     allDay: draft.allDay,
                 },
             );
-            if (saved) setDraft(null);
+            if (saved) {
+                setDraft(null);
+            } else {
+                setDraftError("Couldn't save event. Try again.");
+            }
             return;
         }
 
@@ -534,7 +572,11 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
         const saved = draft.id
             ? await updateEvent(draft.id, event)
             : await addEvent(event);
-        if (saved !== false && saved !== null) setDraft(null);
+        if (saved !== false && saved !== null) {
+            setDraft(null);
+        } else {
+            setDraftError("Couldn't save event. Try again.");
+        }
     }
 
     async function handleDeleteEvent() {
@@ -823,8 +865,19 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                         )}
                     </div>
 
-                    <div className="grid min-w-225 grid-cols-[64px_repeat(7,minmax(0,1fr))]">
-                        <div className="sticky left-0 top-0 z-20 h-336 border-r border-paper-edge bg-paper/95">
+                    {/* relative + z-10 gives this whole scrolling body its
+                        own stacking context, capped below the header's
+                        z-20 -- otherwise the current-time indicator's z-30
+                        (needed to stay above cascaded event bands, whose
+                        own z-index can climb past 20 in a busy day) would
+                        escape past the header itself once scrolled behind
+                        it, instead of being hidden by it like everything
+                        else in this body. */}
+                    <div className="relative z-10 grid min-w-225 grid-cols-[64px_repeat(7,minmax(0,1fr))]">
+                        <div
+                            className="sticky left-0 top-0 z-20 border-r border-paper-edge bg-paper/95"
+                            style={{ height: 24 * HOUR_HEIGHT }}
+                        >
                             {Array.from({ length: 24 }, (_, hour) => (
                                 <div
                                     key={hour}
@@ -848,7 +901,8 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                             return (
                                 <div
                                     key={day.toISOString()}
-                                    className="relative h-336 border-r border-paper-edge bg-paper/40"
+                                    className="relative border-r border-paper-edge bg-paper/40"
+                                    style={{ height: 24 * HOUR_HEIGHT }}
                                 >
                                     {Array.from({ length: 24 }, (_, hour) => (
                                         <div
@@ -888,6 +942,48 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                                 height >= HOUR_HEIGHT &&
                                                 !continuesFromPrevDay &&
                                                 !coveredByLaterEvent;
+                                            // A block clamped to
+                                            // MIN_EVENT_HEIGHT has exactly
+                                            // enough room for one line of
+                                            // title and nothing else --
+                                            // dropping its vertical padding
+                                            // (below) is what makes that
+                                            // line actually fit.
+                                            const isMinHeight =
+                                                height <= MIN_EVENT_HEIGHT;
+                                            // Time range gets its own line,
+                                            // and location (when there is
+                                            // one) gets a second below it,
+                                            // rather than sharing one line.
+                                            const detailLines = showDetails
+                                                ? event.location
+                                                    ? 2
+                                                    : 1
+                                                : 0;
+                                            const detailsHeight = detailLines
+                                                ? EVENT_DETAILS_MARGIN +
+                                                  detailLines *
+                                                      EVENT_DETAIL_LINE_HEIGHT
+                                                : 0;
+                                            // How many lines the title can
+                                            // wrap onto before it has to
+                                            // start clipping -- whatever's
+                                            // left after the box's own
+                                            // padding/border and (if shown)
+                                            // the details lines below it, at
+                                            // least one line even for the
+                                            // shortest event blocks.
+                                            const titleLines = Math.max(
+                                                1,
+                                                Math.floor(
+                                                    (height -
+                                                        (isMinHeight
+                                                            ? EVENT_BOX_CHROME_MINIMAL
+                                                            : EVENT_BOX_CHROME) -
+                                                        detailsHeight) /
+                                                        EVENT_TITLE_LINE_HEIGHT,
+                                                ),
+                                            );
                                             return (
                                                 <button
                                                     key={event.id}
@@ -905,7 +1001,11 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                                             event,
                                                         );
                                                     }}
-                                                    className={`absolute flex flex-col items-start justify-start overflow-hidden border border-pin-todo/40 bg-pin-todo/70 px-2 py-1 text-left text-xs text-ink shadow-sm hover:cursor-pointer hover:bg-pin-todo/8 ${
+                                                    className={`absolute flex flex-col items-start justify-start overflow-hidden border border-pin-todo/40 bg-pin-todo/70 px-2 text-left text-xs text-ink shadow-sm hover:cursor-pointer hover:bg-pin-todo/8 ${
+                                                        isMinHeight
+                                                            ? "py-0"
+                                                            : "py-1"
+                                                    } ${
                                                         continuesFromPrevDay
                                                             ? ""
                                                             : "rounded-t-md"
@@ -922,24 +1022,41 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                                         zIndex,
                                                     }}
                                                 >
-                                                    <p className="w-full truncate font-semibold">
+                                                    <p
+                                                        className="w-full font-semibold"
+                                                        style={{
+                                                            display:
+                                                                "-webkit-box",
+                                                            WebkitLineClamp:
+                                                                titleLines,
+                                                            WebkitBoxOrient:
+                                                                "vertical",
+                                                            overflow:
+                                                                "hidden",
+                                                        }}
+                                                    >
                                                         {continuesFromPrevDay
                                                             ? "‹ "
                                                             : ""}
                                                         {event.title}
                                                     </p>
                                                     {showDetails && (
-                                                        <p className="mt-0.5 w-full whitespace-normal wrap-break-word text-[10px] leading-tight">
-                                                            {formatTime(
-                                                                new Date(
+                                                        <>
+                                                            <p className="mt-0.5 w-full truncate text-[10px] leading-tight">
+                                                                {formatEventTimeRange(
                                                                     event.startsAt,
-                                                                ),
-                                                                settings,
+                                                                    event.endsAt,
+                                                                    settings,
+                                                                )}
+                                                            </p>
+                                                            {event.location && (
+                                                                <p className="w-full truncate text-[10px] leading-tight">
+                                                                    {
+                                                                        event.location
+                                                                    }
+                                                                </p>
                                                             )}
-                                                            {event.location
-                                                                ? ` · ${event.location}`
-                                                                : ""}
-                                                        </p>
+                                                        </>
                                                     )}
                                                 </button>
                                             );
@@ -1407,6 +1524,11 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                 />
                             </label>
                         </div>
+                        {draftError && (
+                            <p className="mt-3 text-xs text-pin-timer">
+                                {draftError}
+                            </p>
+                        )}
                         <div className="mt-5 flex justify-between gap-2">
                             {draft.id || draft.occurrenceEdit ? (
                                 <button
@@ -1433,7 +1555,8 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                     type="button"
                                     onClick={() => void handleSaveEvent()}
                                     disabled={!draft.title.trim()}
-                                    className="rounded-full bg-pin-todo px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                                    className="rounded-full bg-pin-todo px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50
+                                    hover:cursor-pointer"
                                 >
                                     Save
                                 </button>
