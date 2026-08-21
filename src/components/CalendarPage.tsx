@@ -1072,17 +1072,23 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                                     }}
                                                 >
                                                     <p
-                                                        className="w-full font-semibold"
-                                                        style={{
-                                                            display:
-                                                                "-webkit-box",
-                                                            WebkitLineClamp:
-                                                                titleLines,
-                                                            WebkitBoxOrient:
-                                                                "vertical",
-                                                            overflow:
-                                                                "hidden",
-                                                        }}
+                                                        className={`w-full font-semibold ${
+                                                            coveredByLaterEvent
+                                                                ? "truncate"
+                                                                : ""
+                                                        }`}
+                                                        style={
+                                                            coveredByLaterEvent
+                                                                ? undefined
+                                                                : {
+                                                                      display: "-webkit-box",
+                                                                      WebkitLineClamp:
+                                                                          titleLines,
+                                                                      WebkitBoxOrient:
+                                                                          "vertical",
+                                                                      overflow: "hidden",
+                                                                  }
+                                                        }
                                                     >
                                                         {continuesFromPrevDay
                                                             ? "‹ "
