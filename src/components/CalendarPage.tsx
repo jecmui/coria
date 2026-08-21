@@ -68,6 +68,12 @@ interface EventDraft {
         masterEventId: string;
         originalStartTime: string;
     };
+    /** The calendar this event already belongs to -- absent when creating a
+     *  new event (it lands on the primary calendar by default). Purely
+     *  informational: nothing in handleSaveEvent sends it back, it only
+     *  drives whether Save/Delete are disabled for a calendar Coria can't
+     *  write to (see the "manage synced calendars" picker in Settings). */
+    calendarId?: string;
 }
 
 const WEEKDAYS = Array.from({ length: 7 }, (_, index) => index);
@@ -286,6 +292,7 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
     const {
         events,
         exceptions,
+        calendars,
         settings,
         loading,
         error,
@@ -396,6 +403,7 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
             : clicked;
         setDraft({
             id: event.id,
+            calendarId: event.calendarId,
             title: event.title,
             description: event.description,
             location: event.location,
@@ -432,6 +440,7 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
      *  targets that same occurrence, never creates a second one. */
     function editOccurrence(clicked: CalendarEvent) {
         setDraft({
+            calendarId: clicked.calendarId,
             title: clicked.title,
             description: clicked.description,
             location: clicked.location,
@@ -673,6 +682,17 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
         );
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    // "Manage synced calendars" lets a user pull from a Google calendar
+    // they can't write to -- editing or deleting one of its events would
+    // just fail at Google on the next push, so the whole form is disabled
+    // (via the fieldset below) instead of only Save/Delete, which would
+    // otherwise let the user fill out changes with no way to keep them.
+    const readOnlyCalendar = Boolean(
+        draft?.calendarId &&
+            calendars.find((calendar) => calendar.id === draft.calendarId)
+                ?.isWritable === false,
+    );
 
     return (
         <div className="flex h-full w-full flex-col bg-board px-3 py-4 font-body text-ink sm:px-5 sm:py-5">
@@ -1101,7 +1121,16 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                 ×
                             </button>
                         </div>
-                        <div className="space-y-3">
+                        {readOnlyCalendar && (
+                            <p className="mb-3 text-xs text-ink-soft">
+                                This calendar is view-only in Coria — you
+                                can't edit or delete its events.
+                            </p>
+                        )}
+                        <fieldset
+                            disabled={readOnlyCalendar}
+                            className="m-0 space-y-3 border-0 p-0"
+                        >
                             <label className="block space-y-1">
                                 <span className="text-xs font-semibold text-ink-soft">
                                     Title
@@ -1523,7 +1552,7 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                     className="w-full rounded-xl border border-paper-edge bg-board/40 px-3 py-2 text-sm outline-none"
                                 />
                             </label>
-                        </div>
+                        </fieldset>
                         {draftError && (
                             <p className="mt-3 text-xs text-pin-timer">
                                 {draftError}
@@ -1534,7 +1563,8 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                 <button
                                     type="button"
                                     onClick={() => void handleDeleteEvent()}
-                                    className="rounded-full px-4 py-2 text-sm font-semibold text-pin-timer hover:cursor-pointer hover:bg-pin-timer/10"
+                                    disabled={readOnlyCalendar}
+                                    className="rounded-full px-4 py-2 text-sm font-semibold text-pin-timer hover:cursor-pointer hover:bg-pin-timer/10 disabled:cursor-not-allowed disabled:opacity-50"
                                 >
                                     {draft.occurrenceEdit
                                         ? "Delete this event"
@@ -1554,7 +1584,9 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                 <button
                                     type="button"
                                     onClick={() => void handleSaveEvent()}
-                                    disabled={!draft.title.trim()}
+                                    disabled={
+                                        !draft.title.trim() || readOnlyCalendar
+                                    }
                                     className="rounded-full bg-pin-todo px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50
                                     hover:cursor-pointer"
                                 >

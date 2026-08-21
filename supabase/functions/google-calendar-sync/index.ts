@@ -40,6 +40,14 @@ interface LocalCalendar {
     id: string;
     external_calendar_id: string;
     sync_token: string | null;
+    /** Whether Coria can actually write to the linked Google calendar --
+     *  false for one added read-only through the "manage synced calendars"
+     *  picker. Pulling still happens regardless; pushing is skipped
+     *  entirely for these, since Google would just reject it and the UI
+     *  already refuses to let a read-only calendar's events be edited in
+     *  the first place -- this is the defense-in-depth backstop, not the
+     *  primary guard. */
+    is_writable: boolean;
 }
 
 interface LocalEventRow {
@@ -468,7 +476,7 @@ Deno.serve(async (req) => {
         // a purely local one has nothing to sync against.
         const { data: calendars } = await admin
             .from("calendars")
-            .select("id, external_calendar_id, sync_token")
+            .select("id, external_calendar_id, sync_token, is_writable")
             .eq("user_id", userId)
             .not("external_calendar_id", "is", null);
 
@@ -482,12 +490,14 @@ Deno.serve(async (req) => {
                 calendar,
                 timeZone,
             );
-            pushed += await pushCalendar(
-                admin,
-                accessToken,
-                calendar,
-                timeZone,
-            );
+            if (calendar.is_writable) {
+                pushed += await pushCalendar(
+                    admin,
+                    accessToken,
+                    calendar,
+                    timeZone,
+                );
+            }
         }
 
         await admin

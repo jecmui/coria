@@ -152,6 +152,22 @@ export async function listWritableCalendars(
     return data.items ?? [];
 }
 
+/** Every calendar the user has access to, for the "manage synced calendars"
+ *  picker (Settings > Calendar) -- unlike listWritableCalendars, this
+ *  includes calendars they can only view (a subscribed holiday calendar, a
+ *  shared read-only team calendar), since pulling events in doesn't need
+ *  write access. Each entry's own accessRole is what the caller uses to
+ *  decide is_writable when linking one. */
+export async function listAllCalendars(
+    accessToken: string,
+): Promise<GoogleCalendarListEntry[]> {
+    const data = (await googleFetch(
+        accessToken,
+        "/users/me/calendarList",
+    )) as { items?: GoogleCalendarListEntry[] };
+    return data.items ?? [];
+}
+
 /** Phase 3's "create a new calendar for these events" option. */
 export async function createCalendar(
     accessToken: string,

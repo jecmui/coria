@@ -11,6 +11,13 @@ export interface Calendar {
     color: string | null;
     isPrimary: boolean;
     externalCalendarId: string | null;
+    /** Whether Coria can actually write to the linked Google calendar --
+     *  false for one added read-only through the "manage synced calendars"
+     *  picker (Settings > Calendar). Always true for a purely local
+     *  calendar. CalendarPage.tsx checks this before letting an event be
+     *  edited or deleted, since a change to one Coria can't write back
+     *  would just fail at Google on the next push. */
+    isWritable: boolean;
 }
 
 export interface CalendarEvent {

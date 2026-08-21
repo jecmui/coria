@@ -27,3 +27,8 @@ verify_jwt = true
 # READY-08 chose polling over webhooks, so there's no unauthenticated
 # notification endpoint to leave open here.
 verify_jwt = true
+
+[functions.google-calendar-selection]
+# The "manage synced calendars" picker in Settings, invoked by the
+# signed-in user it acts on.
+verify_jwt = true

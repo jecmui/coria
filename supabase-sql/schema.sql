@@ -634,3 +634,20 @@ alter table calendar_event_exceptions
       and ends_at >= starts_at
     )
   );
+
+-- "Manage synced calendars" (Settings > Calendar): lets a user pull from
+-- any Google calendar they have access to, not just the one primary
+-- calendar Phase 3's migration links -- including calendars they can only
+-- view (a subscribed holiday calendar, a shared read-only team calendar).
+-- is_writable records Google's own accessRole for the linked calendar
+-- ("owner"/"writer" vs "reader"/"freeBusyReader") at the moment it was
+-- added, and is what Coria's own edit UI checks before allowing an event
+-- to be changed or deleted (see CalendarPage.tsx) -- editing a pulled
+-- event Coria can't actually write back to would just fail at Google on
+-- the next push. Always true for a purely local calendar (the default).
+-- Deselecting a calendar in the picker deletes its local row outright
+-- (cascading to every event pulled from it) rather than pausing it, so
+-- there's no separate "enabled" flag here the way calendar_connections has
+-- one -- the row's existence *is* the enrollment.
+alter table calendars
+  add column is_writable boolean not null default true;

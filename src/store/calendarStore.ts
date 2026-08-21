@@ -66,9 +66,11 @@ interface CalendarRow {
     color: string | null;
     is_primary: boolean;
     external_calendar_id: string | null;
+    is_writable: boolean;
 }
 
-const CALENDAR_COLUMNS = "id, name, color, is_primary, external_calendar_id";
+const CALENDAR_COLUMNS =
+    "id, name, color, is_primary, external_calendar_id, is_writable";
 
 function rowToCalendar(row: CalendarRow): Calendar {
     return {
@@ -77,6 +79,7 @@ function rowToCalendar(row: CalendarRow): Calendar {
         color: row.color,
         isPrimary: row.is_primary,
         externalCalendarId: row.external_calendar_id,
+        isWritable: row.is_writable,
     };
 }
 
@@ -156,6 +159,18 @@ export type MigrationOption =
     | "existingCalendar"
     | "delete";
 
+/** One of the user's Google calendars, as offered by the "manage synced
+ *  calendars" picker -- unlike GoogleCalendarOption above, this includes
+ *  calendars the user can only view (accessRole "reader"/"freeBusyReader"),
+ *  since pulling events in doesn't need write access, and whether it's
+ *  currently selected (already linked to a local calendar). */
+export interface GoogleCalendarSelectionOption {
+    id: string;
+    summary: string;
+    accessRole: string;
+    selected: boolean;
+}
+
 interface CalendarState {
     userId: string | null;
     events: CalendarEvent[];
@@ -207,6 +222,21 @@ interface CalendarState {
      *  currently on screen so anything the pull brought in is visible
      *  without a manual refresh. */
     syncGoogleCalendar: () => Promise<boolean>;
+    /** "Manage synced calendars" (Settings > Calendar): every Google
+     *  calendar the user can see, minus the one already linked to their
+     *  primary Coria calendar -- that one belongs to the migration flow
+     *  above, not this picker. Null if the request failed. */
+    listGoogleCalendarSelection: () => Promise<
+        GoogleCalendarSelectionOption[] | null
+    >;
+    /** Reconciles local calendars against the picker's full desired
+     *  selection: adds a local row for each newly selected calendar,
+     *  deletes the local row (cascading to every event pulled from it) for
+     *  each one just deselected -- see the table's own comment in
+     *  schema.sql for why deselecting removes rather than pauses. Reloads
+     *  calendars and runs a sync afterward so newly added ones populate
+     *  right away. */
+    saveGoogleCalendarSelection: (calendarIds: string[]) => Promise<boolean>;
     loadEvents: (start: string, end: string) => Promise<void>;
     /** Re-runs the most recent loadEvents range, if there was one. Used
      *  after a sync, which changes rows entirely server-side and so leaves
@@ -504,6 +534,52 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
         // showing predates it.
         await get().refreshEvents();
         set({ googleSyncing: false });
+        return true;
+    },
+
+    listGoogleCalendarSelection: async () => {
+        const { data, error } = await supabase.functions.invoke(
+            "google-calendar-selection",
+            { body: { action: "list" } },
+        );
+        if (error) {
+            console.error(
+                "Failed to list Google calendars:",
+                error.message,
+            );
+            return null;
+        }
+        return (data?.calendars ?? []) as GoogleCalendarSelectionOption[];
+    },
+
+    saveGoogleCalendarSelection: async (calendarIds) => {
+        const userId = get().userId;
+        if (!userId) return false;
+        const { error } = await supabase.functions.invoke(
+            "google-calendar-selection",
+            { body: { action: "save", calendarIds } },
+        );
+        if (error) {
+            console.error(
+                "Failed to save calendar selection:",
+                error.message,
+            );
+            return false;
+        }
+        // The save added/removed local calendar rows server-side, so the
+        // store's own copy (and any events belonging to a now-removed one)
+        // is stale until reloaded.
+        const { data: calendarRows } = await supabase
+            .from("calendars")
+            .select(CALENDAR_COLUMNS)
+            .eq("user_id", userId);
+        if (calendarRows) {
+            set({
+                calendars: (calendarRows as CalendarRow[]).map(rowToCalendar),
+            });
+        }
+        await get().refreshEvents();
+        void get().syncGoogleCalendar();
         return true;
     },
 

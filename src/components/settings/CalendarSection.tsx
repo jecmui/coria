@@ -12,6 +12,7 @@ import {
 } from "../../store/calendarStore";
 import type {
     GoogleCalendarOption,
+    GoogleCalendarSelectionOption,
     MigrationOption,
 } from "../../store/calendarStore";
 import type { CalendarSettings } from "../../types/calendar";
@@ -50,6 +51,12 @@ export const CalendarSection = forwardRef<
     const listGoogleCalendars = useCalendarStore((s) => s.listGoogleCalendars);
     const migrateLocalEvents = useCalendarStore((s) => s.migrateLocalEvents);
     const syncGoogleCalendar = useCalendarStore((s) => s.syncGoogleCalendar);
+    const listGoogleCalendarSelection = useCalendarStore(
+        (s) => s.listGoogleCalendarSelection,
+    );
+    const saveGoogleCalendarSelection = useCalendarStore(
+        (s) => s.saveGoogleCalendarSelection,
+    );
 
     const [calendarForm, setCalendarForm] = useState<CalendarSettings>(
         storeCalendarSettings,
@@ -77,6 +84,17 @@ export const CalendarSection = forwardRef<
     >([]);
     const [selectedGoogleCalendar, setSelectedGoogleCalendar] = useState("");
     const [migrating, setMigrating] = useState(false);
+    // "Manage synced calendars" picker. `managingCalendars` doubles as the
+    // open/closed flag, same as migrationCount above.
+    const [managingCalendars, setManagingCalendars] = useState(false);
+    const [calendarPickerLoading, setCalendarPickerLoading] = useState(false);
+    const [calendarPickerSaving, setCalendarPickerSaving] = useState(false);
+    const [calendarPickerOptions, setCalendarPickerOptions] = useState<
+        GoogleCalendarSelectionOption[]
+    >([]);
+    const [selectedCalendarIds, setSelectedCalendarIds] = useState<
+        Set<string>
+    >(new Set());
 
     useEffect(() => {
         if (calendarLoading || calendarSynced) return;
@@ -183,6 +201,53 @@ export const CalendarSection = forwardRef<
         const synced = await syncGoogleCalendar();
         setGoogleMessage(synced ? "Synced with Google Calendar." : null);
         if (!synced) setGoogleError("Couldn't sync. Try again.");
+    }
+
+    async function handleOpenCalendarPicker() {
+        setGoogleError(null);
+        setManagingCalendars(true);
+        setCalendarPickerLoading(true);
+        const options = await listGoogleCalendarSelection();
+        setCalendarPickerLoading(false);
+        if (!options) {
+            setManagingCalendars(false);
+            setGoogleError("Couldn't load your Google calendars. Try again.");
+            return;
+        }
+        setCalendarPickerOptions(options);
+        setSelectedCalendarIds(
+            new Set(
+                options
+                    .filter((option) => option.selected)
+                    .map((option) => option.id),
+            ),
+        );
+    }
+
+    function toggleCalendarSelected(id: string) {
+        setSelectedCalendarIds((current) => {
+            const next = new Set(current);
+            if (next.has(id)) {
+                next.delete(id);
+            } else {
+                next.add(id);
+            }
+            return next;
+        });
+    }
+
+    async function handleSaveCalendarSelection() {
+        setCalendarPickerSaving(true);
+        const saved = await saveGoogleCalendarSelection([
+            ...selectedCalendarIds,
+        ]);
+        setCalendarPickerSaving(false);
+        if (!saved) {
+            setGoogleError("Couldn't save your calendar selection. Try again.");
+            return;
+        }
+        setManagingCalendars(false);
+        setGoogleMessage("Synced calendars updated.");
     }
 
     const isCalendarDirty =
@@ -312,6 +377,15 @@ export const CalendarSection = forwardRef<
                                         {googleSyncing
                                             ? "Syncing…"
                                             : "Sync now"}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            void handleOpenCalendarPicker()
+                                        }
+                                        className="rounded-full border border-paper-edge px-4 py-2 text-sm font-semibold text-ink-soft hover:cursor-pointer hover:bg-black/5"
+                                    >
+                                        Manage synced calendars
                                     </button>
                                 </>
                             ) : (
@@ -564,6 +638,100 @@ export const CalendarSection = forwardRef<
                                 className="rounded-full bg-pin-todo px-4 py-2 text-sm font-semibold text-ink shadow-sm hover:cursor-pointer hover:bg-pin-todo/90 disabled:cursor-not-allowed disabled:opacity-50"
                             >
                                 {migrating ? "Working…" : "Continue"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {managingCalendars && (
+                <div className="fixed inset-0 z-100 flex items-center justify-center bg-black/40 px-4">
+                    <div className="w-full max-w-md rounded-2xl border border-paper-edge bg-paper p-5 shadow-[0_16px_48px_rgba(0,0,0,0.35)]">
+                        <h2 className="font-display text-lg font-semibold text-ink">
+                            Manage synced calendars
+                        </h2>
+                        <p className="mt-1 font-body text-sm text-ink-soft">
+                            Choose which of your Google calendars Coria
+                            should pull events from. Unchecking one removes
+                            everything Coria has pulled from it.
+                        </p>
+
+                        {calendarPickerLoading ? (
+                            <p className="mt-4 font-body text-xs text-ink-soft">
+                                Loading your calendars…
+                            </p>
+                        ) : calendarPickerOptions.length === 0 ? (
+                            <p className="mt-4 font-body text-xs text-ink-soft">
+                                No other calendars found on your Google
+                                account.
+                            </p>
+                        ) : (
+                            <div className="mt-4 max-h-80 space-y-2 overflow-y-auto">
+                                {calendarPickerOptions.map((option) => {
+                                    const isWritable =
+                                        option.accessRole === "owner" ||
+                                        option.accessRole === "writer";
+                                    const checked = selectedCalendarIds.has(
+                                        option.id,
+                                    );
+                                    return (
+                                        <label
+                                            key={option.id}
+                                            className={`flex cursor-pointer items-start gap-2 rounded-xl border p-3 ${
+                                                checked
+                                                    ? "border-pin-todo bg-pin-todo/10"
+                                                    : "border-paper-edge hover:bg-black/5"
+                                            }`}
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                checked={checked}
+                                                onChange={() =>
+                                                    toggleCalendarSelected(
+                                                        option.id,
+                                                    )
+                                                }
+                                                className="mt-0.5 accent-pin-todo"
+                                            />
+                                            <span>
+                                                <span className="block font-body text-sm font-medium text-ink">
+                                                    {option.summary}
+                                                </span>
+                                                {!isWritable && (
+                                                    <span className="block font-body text-xs text-ink-soft">
+                                                        View only — you
+                                                        can't edit or delete
+                                                        these events in
+                                                        Coria.
+                                                    </span>
+                                                )}
+                                            </span>
+                                        </label>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        <div className="mt-5 flex justify-end gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setManagingCalendars(false)}
+                                className="rounded-full border border-paper-edge px-4 py-2 text-sm font-semibold hover:cursor-pointer hover:bg-black/5"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() =>
+                                    void handleSaveCalendarSelection()
+                                }
+                                disabled={
+                                    calendarPickerLoading ||
+                                    calendarPickerSaving
+                                }
+                                className="rounded-full bg-pin-todo px-4 py-2 text-sm font-semibold text-ink shadow-sm hover:cursor-pointer hover:bg-pin-todo/90 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                                {calendarPickerSaving ? "Saving…" : "Save"}
                             </button>
                         </div>
                     </div>
