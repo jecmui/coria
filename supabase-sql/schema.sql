@@ -564,3 +564,24 @@ alter table calendar_connections
 -- webhooks are ever picked up as the later upgrade.
 alter table calendar_connections
   add column poll_interval_seconds integer not null default 300;
+
+-- Phase 1: a short-lived, single-use nonce binding a Google OAuth flow back
+-- to the Coria user who started it. The "Connect Google Calendar" button
+-- (Phase 2) inserts a row for itself -- RLS below lets a user create only
+-- their own -- then sends that row's id to Google as the `state` param.
+-- Google's redirect back to google-oauth-callback is a plain browser
+-- navigation, not an authenticated fetch, so it carries no Supabase
+-- session; the callback resolves *which* user this is purely by looking
+-- this row up (service-role only -- see the missing select/delete policy
+-- below), then deletes it so the same state can't be replayed.
+create table google_oauth_states (
+  state uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+
+alter table google_oauth_states enable row level security;
+
+create policy "Users create own oauth state"
+on google_oauth_states for insert
+with check (auth.uid() = user_id);

@@ -1,0 +1,18 @@
+# Functions-only config -- this project manages its schema by hand through
+# supabase-sql/schema.sql pasted into Supabase Studio's SQL editor, not
+# through `supabase db` migrations, so there's nothing else to configure
+# here yet. Set project_id to your actual project ref before `supabase
+# link`ing (Settings > General > Reference ID in the Supabase dashboard).
+project_id = "coria"
+
+[functions.google-oauth-callback]
+# Google's redirect here is a plain browser navigation, not an
+# authenticated fetch -- it carries no Supabase session to verify. Identity
+# comes from the google_oauth_states lookup inside the function itself.
+verify_jwt = false
+
+[functions.google-token-refresh]
+# Called by a signed-in user's own browser (or, once Phase 4 exists,
+# reused directly as a shared function rather than over HTTP) -- Supabase
+# checks the caller's session before the function code even runs.
+verify_jwt = true
