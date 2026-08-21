@@ -20,6 +20,7 @@ import {
     buildGoogleAuthorizeUrl,
     isGoogleCalendarConfigured,
 } from "../../lib/googleAuth";
+import { useModalDismiss } from "../../lib/useModalDismiss";
 import { inputClass, TimeZoneSelect } from "./shared";
 import type { SettingsSectionHandle, SettingsSectionProps } from "./types";
 
@@ -95,6 +96,15 @@ export const CalendarSection = forwardRef<
     const [selectedCalendarIds, setSelectedCalendarIds] = useState<
         Set<string>
     >(new Set());
+    // Dismissing the migration prompt this way doesn't lose anything --
+    // needsMigration stays true, so it simply asks again the next time
+    // this section mounts (e.g. leaving and returning to this settings tab).
+    const dismissMigration = useModalDismiss(migrationCount !== null, () =>
+        setMigrationCount(null),
+    );
+    const dismissCalendarPicker = useModalDismiss(managingCalendars, () =>
+        setManagingCalendars(false),
+    );
 
     useEffect(() => {
         if (calendarLoading || calendarSynced) return;
@@ -370,6 +380,15 @@ export const CalendarSection = forwardRef<
                                     </button>
                                     <button
                                         type="button"
+                                        onClick={() =>
+                                            void handleOpenCalendarPicker()
+                                        }
+                                        className="rounded-full border border-paper-edge px-4 py-2 text-sm font-semibold text-ink-soft hover:cursor-pointer hover:bg-black/5"
+                                    >
+                                        Manage synced calendars
+                                    </button>
+                                    <button
+                                        type="button"
                                         onClick={() => void handleSyncNow()}
                                         disabled={googleSyncing}
                                         className="rounded-full border border-paper-edge px-4 py-2 text-sm font-semibold text-ink-soft hover:cursor-pointer hover:bg-black/5 disabled:cursor-not-allowed disabled:opacity-50"
@@ -377,15 +396,6 @@ export const CalendarSection = forwardRef<
                                         {googleSyncing
                                             ? "Syncing…"
                                             : "Sync now"}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() =>
-                                            void handleOpenCalendarPicker()
-                                        }
-                                        className="rounded-full border border-paper-edge px-4 py-2 text-sm font-semibold text-ink-soft hover:cursor-pointer hover:bg-black/5"
-                                    >
-                                        Manage synced calendars
                                     </button>
                                 </>
                             ) : (
@@ -539,7 +549,10 @@ export const CalendarSection = forwardRef<
             )}
 
             {migrationCount !== null && (
-                <div className="fixed inset-0 z-100 flex items-center justify-center bg-black/40 px-4">
+                <div
+                    className="fixed inset-0 z-100 flex items-center justify-center bg-black/40 px-4"
+                    onClick={dismissMigration}
+                >
                     <div className="w-full max-w-md rounded-2xl border border-paper-edge bg-paper p-5 shadow-[0_16px_48px_rgba(0,0,0,0.35)]">
                         <h2 className="font-display text-lg font-semibold text-ink">
                             You have existing events
@@ -645,7 +658,10 @@ export const CalendarSection = forwardRef<
             )}
 
             {managingCalendars && (
-                <div className="fixed inset-0 z-100 flex items-center justify-center bg-black/40 px-4">
+                <div
+                    className="fixed inset-0 z-100 flex items-center justify-center bg-black/40 px-4"
+                    onClick={dismissCalendarPicker}
+                >
                     <div className="w-full max-w-md rounded-2xl border border-paper-edge bg-paper p-5 shadow-[0_16px_48px_rgba(0,0,0,0.35)]">
                         <h2 className="font-display text-lg font-semibold text-ink">
                             Manage synced calendars

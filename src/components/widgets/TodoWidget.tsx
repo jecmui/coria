@@ -4,6 +4,7 @@ import type { MouseEvent, PointerEvent, RefObject } from "react";
 import { useTaskStore } from "../../store/taskStore";
 import { useAppearanceStore } from "../../store/appearanceStore";
 import { useDragReorder } from "../../lib/useDragReorder";
+import { useModalDismiss } from "../../lib/useModalDismiss";
 import { ContextMenu } from "../ContextMenu";
 import type { ContextMenuItem } from "../ContextMenu";
 
@@ -111,6 +112,10 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
     const pendingDeleteTask = pendingDeleteId
         ? tasks.find((t) => t.id === pendingDeleteId)
         : undefined;
+    const dismissDeleteConfirm = useModalDismiss(
+        Boolean(pendingDeleteTask),
+        () => setPendingDeleteId(null),
+    );
     const hasCompletedFocusTask = focusTasks.some((t) => t.done);
 
     useEffect(() => {
@@ -617,7 +622,10 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
 
             {pendingDeleteTask &&
                 createPortal(
-                    <div className="fixed inset-0 z-100 flex items-center justify-center bg-black/40 px-4">
+                    <div
+                        className="fixed inset-0 z-100 flex items-center justify-center bg-black/40 px-4"
+                        onClick={dismissDeleteConfirm}
+                    >
                         <div className="w-full max-w-sm rounded-lg border border-paper-edge bg-paper p-6 shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
                             <h2 className="mb-2 font-display text-lg font-semibold text-ink">
                                 Delete this task?

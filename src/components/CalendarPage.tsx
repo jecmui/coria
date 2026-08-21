@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { RRule, Weekday } from "rrule";
 import { useCalendarStore } from "../store/calendarStore";
+import { useModalDismiss } from "../lib/useModalDismiss";
 import type { CalendarEvent, CalendarSettings } from "../types/calendar";
 import type {
     CustomRepeatUnit,
@@ -19,8 +20,10 @@ import {
     expandRecurringEvents,
     eventOverlapsDay,
     floatingUtcToDateValue,
+    formatDate,
     formatDayName,
     formatEventTimeRange,
+    formatFullEventTimeRange,
     formatHour,
     formatMonthDay,
     getWeekStart,
@@ -322,6 +325,23 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
     const [scopeChoice, setScopeChoice] = useState<CalendarEvent | null>(
         null,
     );
+    // Clicking any event opens this read-only preview first, rather than
+    // jumping straight to the edit form -- its own Edit button is what
+    // triggers the scope-choice-then-editEvent flow below.
+    const [previewEvent, setPreviewEvent] = useState<CalendarEvent | null>(
+        null,
+    );
+    // Escape and clicking outside close whichever of these three is
+    // currently open, same as their own Cancel/×/Close buttons already do.
+    const dismissDraft = useModalDismiss(draft !== null, () =>
+        setDraft(null),
+    );
+    const dismissScopeChoice = useModalDismiss(scopeChoice !== null, () =>
+        setScopeChoice(null),
+    );
+    const dismissPreview = useModalDismiss(previewEvent !== null, () =>
+        setPreviewEvent(null),
+    );
     const [allDayExpanded, setAllDayExpanded] = useState(false);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     // Ticks the current-time indicator line -- 30s is frequent enough to
@@ -469,13 +489,22 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
         });
     }
 
-    /** Entry point for every click on a rendered event -- a non-recurring
-     *  event (or the rare case where a click somehow reaches a master row
-     *  directly) skips straight to editing it, but a recurring occurrence
-     *  always needs "this event" vs "all events" decided first, since that
-     *  choice changes both what the draft edits and what its Delete button
-     *  does. */
+    /** Entry point for every click on a rendered event -- opens the
+     *  read-only preview first; editing only starts once its own Edit
+     *  button is clicked (see handleEditFromPreview). */
     function handleEventClick(clicked: CalendarEvent) {
+        setPreviewEvent(clicked);
+    }
+
+    /** The preview's Edit button -- a non-recurring event (or the rare case
+     *  where a click somehow reaches a master row directly) skips straight
+     *  to editing it, but a recurring occurrence always needs "this event"
+     *  vs "all events" decided first, since that choice changes both what
+     *  the draft edits and what its Delete button does. */
+    function handleEditFromPreview() {
+        if (!previewEvent) return;
+        const clicked = previewEvent;
+        setPreviewEvent(null);
         if (clicked.instanceOf) {
             setScopeChoice(clicked);
         } else {
@@ -1103,7 +1132,10 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
             </div>
 
             {draft && (
-                <div className="fixed inset-0 z-100 flex items-center justify-center bg-black/40 px-4">
+                <div
+                    className="fixed inset-0 z-100 flex items-center justify-center bg-black/40 px-4"
+                    onClick={dismissDraft}
+                >
                     <div className="w-full max-w-lg rounded-2xl border border-paper-edge bg-paper p-5 shadow-[0_16px_48px_rgba(0,0,0,0.35)]">
                         <div className="mb-4 flex items-center justify-between">
                             <h2 className="font-display text-lg font-semibold">
@@ -1598,8 +1630,124 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                 </div>
             )}
 
+            {previewEvent &&
+                (() => {
+                    // Repeat state/labels always resolve from the master
+                    // (never the clicked occurrence itself) so a moved or
+                    // retitled single occurrence still shows the series'
+                    // own repeat pattern, same as the edit form does.
+                    const master = previewEvent.instanceOf
+                        ? (events.find(
+                              (event) => event.id === previewEvent.instanceOf,
+                          ) ?? previewEvent)
+                        : previewEvent;
+                    const repeatState = repeatStateFromRule(
+                        master.recurrenceRule,
+                        master.startsAt,
+                        master.eventTimeZone ?? settings.timeZone,
+                    );
+                    const repeatLabel =
+                        repeatState.repeatPreset === "none"
+                            ? null
+                            : repeatState.repeatPreset === "custom"
+                              ? "Repeats"
+                              : describeRepeatPresets(
+                                    dateInputValue(
+                                        new Date(master.startsAt),
+                                        settings.timeZone,
+                                    ),
+                                    settings,
+                                )[repeatState.repeatPreset];
+
+                    const start = new Date(previewEvent.startsAt);
+                    const rawEnd = new Date(previewEvent.endsAt);
+                    // endsAt is exclusive for an all-day event -- the start
+                    // of the day *after* the last one it covers -- so the
+                    // day it should actually display as its last is one
+                    // instant earlier.
+                    const displayEnd = previewEvent.allDay
+                        ? new Date(rawEnd.getTime() - 1)
+                        : rawEnd;
+                    const spansMultipleDays = !sameCalendarDay(
+                        start,
+                        displayEnd,
+                        settings.timeZone,
+                    );
+                    const dateLabel = spansMultipleDays
+                        ? `${formatDate(start, settings)} – ${formatDate(displayEnd, settings)}`
+                        : formatDate(start, settings);
+
+                    return (
+                        <div
+                            className="fixed inset-0 z-100 flex items-center justify-center bg-black/40 px-4"
+                            onClick={dismissPreview}
+                        >
+                            <div className="w-full max-w-md rounded-2xl border border-paper-edge bg-paper p-5 shadow-[0_16px_48px_rgba(0,0,0,0.35)]">
+                                <div className="mb-3 flex items-start justify-between gap-2">
+                                    <h2 className="font-display text-xl font-semibold">
+                                        {previewEvent.title}
+                                    </h2>
+                                    <button
+                                        type="button"
+                                        onClick={() => setPreviewEvent(null)}
+                                        className="shrink-0 rounded-full px-2 text-lg text-ink-soft hover:cursor-pointer hover:bg-black/5"
+                                    >
+                                        ×
+                                    </button>
+                                </div>
+                                <div className="space-y-2 text-sm text-ink">
+                                    <p>
+                                        {dateLabel}
+                                        {previewEvent.allDay
+                                            ? " · All day"
+                                            : ` · ${formatFullEventTimeRange(
+                                                  previewEvent.startsAt,
+                                                  previewEvent.endsAt,
+                                                  settings,
+                                              )}`}
+                                    </p>
+                                    {previewEvent.location && (
+                                        <p className="text-ink-soft">
+                                            {previewEvent.location}
+                                        </p>
+                                    )}
+                                    {repeatLabel && (
+                                        <p className="text-xs text-ink-soft">
+                                            ↻ {repeatLabel}
+                                        </p>
+                                    )}
+                                    {previewEvent.description && (
+                                        <p className="whitespace-pre-wrap text-ink-soft">
+                                            {previewEvent.description}
+                                        </p>
+                                    )}
+                                </div>
+                                <div className="mt-5 flex justify-end gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setPreviewEvent(null)}
+                                        className="rounded-full border border-paper-edge px-4 py-2 text-sm font-semibold hover:cursor-pointer hover:bg-black/5"
+                                    >
+                                        Close
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={handleEditFromPreview}
+                                        className="rounded-full bg-pin-todo px-4 py-2 text-sm font-semibold hover:cursor-pointer hover:bg-pin-todo/90"
+                                    >
+                                        Edit
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })()}
+
             {scopeChoice && (
-                <div className="fixed inset-0 z-100 flex items-center justify-center bg-black/40 px-4">
+                <div
+                    className="fixed inset-0 z-100 flex items-center justify-center bg-black/40 px-4"
+                    onClick={dismissScopeChoice}
+                >
                     <div className="w-full max-w-xs rounded-2xl border border-paper-edge bg-paper p-5 shadow-[0_16px_48px_rgba(0,0,0,0.35)]">
                         <h2 className="mb-1 font-display text-base font-semibold">
                             {scopeChoice.title}

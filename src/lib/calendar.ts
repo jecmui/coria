@@ -106,6 +106,18 @@ export function formatEventTimeRange(
     return `${startLabel} - ${endParts.hourMinute}${endParts.period}`;
 }
 
+/** A timed event's start-end range in full -- "3:00 PM - 4:00 PM", never
+ *  dropping a :00 or sharing one side's AM/PM with the other -- for
+ *  contexts with room to spare, like the event preview, unlike the
+ *  space-saving formatEventTimeRange above used in narrow event blocks. */
+export function formatFullEventTimeRange(
+    startsAt: string,
+    endsAt: string,
+    settings: CalendarSettings,
+): string {
+    return `${formatTime(new Date(startsAt), settings)} - ${formatTime(new Date(endsAt), settings)}`;
+}
+
 export function formatHour(hour: number, settings: CalendarSettings) {
     const date = new Date(2000, 0, 1, hour, 0);
     return new Intl.DateTimeFormat("en-US", {

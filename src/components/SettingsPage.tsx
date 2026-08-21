@@ -1,4 +1,5 @@
 import { forwardRef, useImperativeHandle, useRef, useState } from "react";
+import { useModalDismiss } from "../lib/useModalDismiss";
 import { AccountSection } from "./settings/AccountSection";
 import { AppearanceSection } from "./settings/AppearanceSection";
 import { BoardSection } from "./settings/BoardSection";
@@ -54,6 +55,10 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
         const sectionRef = useRef<SettingsSectionHandle>(null);
         const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
         const pendingActionRef = useRef<(() => void) | null>(null);
+        const dismissLeaveConfirm = useModalDismiss(
+            showLeaveConfirm,
+            cancelLeave,
+        );
 
         function requestNavigation(action: () => void) {
             if (status.dirty) {
@@ -167,7 +172,10 @@ export const SettingsPage = forwardRef<SettingsPageHandle, SettingsPageProps>(
                 </div>
 
                 {showLeaveConfirm && (
-                    <div className="fixed inset-0 z-100 flex items-center justify-center bg-black/40 px-4">
+                    <div
+                        className="fixed inset-0 z-100 flex items-center justify-center bg-black/40 px-4"
+                        onClick={dismissLeaveConfirm}
+                    >
                         <div className="w-full max-w-sm rounded-lg border border-paper-edge bg-paper p-6 shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
                             <h2 className="mb-2 font-display text-lg font-semibold text-ink">
                                 Are you sure you want to leave without making
