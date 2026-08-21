@@ -3,16 +3,17 @@ import { createAdminClient } from "../_shared/supabaseAdmin.ts";
 import { ensureFreshAccessToken } from "../_shared/google.ts";
 import { corsHeaders } from "../_shared/cors.ts";
 
-function json(body: unknown, status = 200): Response {
-    return new Response(JSON.stringify(body), {
-        status,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-}
-
 Deno.serve(async (req) => {
+    const cors = corsHeaders(req);
+    function json(body: unknown, status = 200): Response {
+        return new Response(JSON.stringify(body), {
+            status,
+            headers: { ...cors, "Content-Type": "application/json" },
+        });
+    }
+
     if (req.method === "OPTIONS") {
-        return new Response(null, { headers: corsHeaders });
+        return new Response(null, { headers: cors });
     }
 
     // config.toml sets verify_jwt = true for this function, so Supabase

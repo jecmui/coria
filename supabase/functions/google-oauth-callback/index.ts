@@ -3,17 +3,25 @@ import {
     exchangeCodeForTokens,
     fetchPrimaryCalendarId,
 } from "../_shared/google.ts";
+import { pickAllowedOrigin } from "../_shared/origins.ts";
 
 /** How long a google_oauth_states row stays valid -- generous enough for a
  *  slow consent screen, tight enough that an old, abandoned row is never a
  *  meaningful replay target. */
 const STATE_MAX_AGE_MS = 10 * 60 * 1000;
 
-function redirectTo(path: string): Response {
-    const appUrl = Deno.env.get("APP_URL") ?? "http://localhost:5173";
+/** `origin` is the caller's own return_origin (see startGoogleConnect in
+ *  calendarStore.ts), already checked against ALLOWED_ORIGINS by the
+ *  caller -- falls back to APP_URL when there's no resolved origin yet
+ *  (the earliest failure paths, before the state row is even looked up)
+ *  or when a row predates the return_origin column. A single static
+ *  APP_URL can only ever be right for one environment, which is exactly
+ *  the bug this whole redirectTo signature exists to avoid repeating. */
+function redirectTo(path: string, origin?: string | null): Response {
+    const target = origin ?? Deno.env.get("APP_URL") ?? "http://localhost:5173";
     return new Response(null, {
         status: 302,
-        headers: { Location: `${appUrl}${path}` },
+        headers: { Location: `${target}${path}` },
     });
 }
 
@@ -41,17 +49,19 @@ Deno.serve(async (req) => {
         .from("google_oauth_states")
         .delete()
         .eq("state", state)
-        .select("user_id, created_at")
+        .select("user_id, created_at, return_origin")
         .single();
 
     if (stateError || !stateRow) {
         console.error("Unknown or already-used oauth state:", state);
         return redirectTo("/?google=invalid_state");
     }
+    const returnOrigin = pickAllowedOrigin(stateRow.return_origin);
+
     const stateAge = Date.now() - new Date(stateRow.created_at).getTime();
     if (stateAge > STATE_MAX_AGE_MS) {
         console.error("Expired oauth state:", state);
-        return redirectTo("/?google=expired_state");
+        return redirectTo("/?google=expired_state", returnOrigin);
     }
 
     // Opportunistic cleanup of anything abandoned mid-flow (a user who
@@ -131,9 +141,9 @@ Deno.serve(async (req) => {
             );
         }
 
-        return redirectTo("/?google=connected");
+        return redirectTo("/?google=connected", returnOrigin);
     } catch (error) {
         console.error("google-oauth-callback failed:", error);
-        return redirectTo("/?google=error");
+        return redirectTo("/?google=error", returnOrigin);
     }
 });

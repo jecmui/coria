@@ -107,6 +107,19 @@ export interface EventException {
     externalRaw: Record<string, unknown> | null;
 }
 
+/** Phase 2: whether (and as which Google account) the signed-in user has
+ *  connected Google Calendar. providerAccountId is the connected account's
+ *  email, populated by google-oauth-callback from its primary calendar's
+ *  own id. Absent (null from loadGoogleConnection) when never connected. */
+export interface GoogleConnection {
+    id: string;
+    providerAccountId: string | null;
+    /** READY-08's polling cadence: how often a background sync pass should
+     *  run for this connection, since Coria polls rather than receiving
+     *  webhooks from Google. */
+    pollIntervalSeconds: number;
+}
+
 export interface CalendarSettings {
     weekStart: number;
     dateFormat: "MM/DD/YYYY" | "DD/MM/YYYY" | "YYYY-MM-DD";

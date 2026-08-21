@@ -585,3 +585,36 @@ alter table google_oauth_states enable row level security;
 create policy "Users create own oauth state"
 on google_oauth_states for insert
 with check (auth.uid() = user_id);
+
+-- Phase 3/4: a calendar that has been linked to a Google calendar carries
+-- that calendar's own incremental-sync cursor. Google's events.list returns
+-- a nextSyncToken with every full page; handing it back on the next call
+-- returns only what changed since, instead of re-listing the whole
+-- calendar. Null means "never synced" (or the token was rejected as too
+-- old, in which case google-calendar-sync clears it and falls back to a
+-- full list). Only meaningful alongside external_calendar_id -- a purely
+-- local calendar never syncs at all.
+alter table calendars
+  add column sync_token text;
+
+-- Phase 4 push bookkeeping, mirroring calendar_events.dirty: a locally
+-- created calendar that hasn't been mirrored to Google yet. There's no
+-- calendar-creation UI in Coria today (every user has exactly the one
+-- primary calendar from READY-01, and Phase 3's migration links it), so
+-- nothing sets this to true yet -- it exists so a future "New calendar"
+-- feature has the same push path events already have.
+alter table calendars
+  add column dirty boolean not null default false;
+
+-- Fixes a real bug hit in testing: google-oauth-callback originally always
+-- redirected back to a single static APP_URL secret, which can only ever
+-- be one environment (production, say) -- anyone completing the OAuth flow
+-- from localhost during development got silently redirected to prod
+-- instead. return_origin captures which frontend origin actually started
+-- this attempt (see startGoogleConnect in calendarStore.ts), so the
+-- callback can send the browser back to where it really came from,
+-- validated against ALLOWED_ORIGINS before being trusted. Nullable so an
+-- old, already-in-flight row from before this column existed still falls
+-- back to APP_URL rather than failing outright.
+alter table google_oauth_states
+  add column return_origin text;

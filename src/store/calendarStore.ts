@@ -6,6 +6,7 @@ import type {
     CalendarEventSource,
     CalendarSettings,
     EventException,
+    GoogleConnection,
 } from "../types/calendar";
 
 /** Fields a caller can create/update an event without specifying -- creation
@@ -126,18 +127,91 @@ interface EventExceptionFields {
     allDay: boolean;
 }
 
+interface CalendarConnectionRow {
+    id: string;
+    provider_account_id: string | null;
+    poll_interval_seconds: number;
+}
+
+function rowToGoogleConnection(row: CalendarConnectionRow): GoogleConnection {
+    return {
+        id: row.id,
+        providerAccountId: row.provider_account_id,
+        pollIntervalSeconds: row.poll_interval_seconds,
+    };
+}
+
+/** One of the user's Google calendars, as offered by Phase 3's "add them
+ *  to an existing calendar" option. */
+export interface GoogleCalendarOption {
+    id: string;
+    summary: string;
+    primary: boolean;
+}
+
+/** Phase 3's three answers to "you have existing events, what should
+ *  happen to them?" -- mirrored exactly by google-calendar-migrate. */
+export type MigrationOption =
+    | "newCalendar"
+    | "existingCalendar"
+    | "delete";
+
 interface CalendarState {
     userId: string | null;
     events: CalendarEvent[];
     calendars: Calendar[];
     exceptions: EventException[];
+    googleConnection: GoogleConnection | null;
+    googleConnectionLoading: boolean;
+    googleSyncing: boolean;
     settings: CalendarSettings;
     loading: boolean;
     settingsLoading: boolean;
     error: string | null;
     settingsError: string | null;
     load: (userId: string) => Promise<void>;
+    /** Phase 2: refreshes whether the user has a Google connection --
+     *  called once from load(), and again by CalendarSection after a
+     *  connect attempt returns, since that happens well after load()'s own
+     *  initial check already ran. */
+    loadGoogleConnection: (userId: string) => Promise<void>;
+    /** Phase 2: the first half of "Connect Google Calendar" -- creates the
+     *  google_oauth_states row that ties the flow back to this user (see
+     *  the table's own comment in schema.sql) and returns its id, which
+     *  the caller sends to Google as the `state` param via
+     *  buildGoogleAuthorizeUrl. Null on failure (not signed in, or the
+     *  insert itself failed). */
+    startGoogleConnect: () => Promise<string | null>;
+    /** Removes the user's Google connection. A plain delete, not a
+     *  tombstone -- disconnecting means "stop syncing," there's nothing a
+     *  future sync pass would need to see afterward. calendar_connections'
+     *  own "for all" RLS policy already covers delete, so this needs no
+     *  Edge Function. calendar_connection_secrets cascades away with it
+     *  (its connection_id FK is `on delete cascade`). */
+    disconnectGoogleConnection: () => Promise<boolean>;
+    /** Phase 3: how many local-only events the migration prompt is about.
+     *  Zero means there's nothing to ask -- see CalendarSection, which
+     *  links the calendar silently in that case rather than posing a
+     *  question with no stakes. */
+    countMigratableEvents: () => Promise<number>;
+    /** Phase 3: the user's writable Google calendars, for the "add them to
+     *  an existing calendar" option. Null if the request failed. */
+    listGoogleCalendars: () => Promise<GoogleCalendarOption[] | null>;
+    /** Phase 3: acts on the migration choice, then refreshes local
+     *  calendars so `needsGoogleMigration` stops reporting true. */
+    migrateLocalEvents: (
+        option: MigrationOption,
+        googleCalendarId?: string,
+    ) => Promise<boolean>;
+    /** Phase 4: runs one pull/push pass, then reloads whatever range is
+     *  currently on screen so anything the pull brought in is visible
+     *  without a manual refresh. */
+    syncGoogleCalendar: () => Promise<boolean>;
     loadEvents: (start: string, end: string) => Promise<void>;
+    /** Re-runs the most recent loadEvents range, if there was one. Used
+     *  after a sync, which changes rows entirely server-side and so leaves
+     *  the store's copy stale. */
+    refreshEvents: () => Promise<void>;
     saveSettings: (settings: CalendarSettings) => Promise<boolean>;
     addEvent: (
         event: Omit<CalendarEvent, "id" | "updatedAt" | OptionalEventFields> &
@@ -168,6 +242,33 @@ interface CalendarState {
     clear: () => void;
 }
 
+/** Phase 5: how long local mutations are allowed to pile up before a sync
+ *  is fired. Editing an event is rarely a single write (a drag can produce
+ *  several in a row), and every one of them marks the row dirty, so a
+ *  short coalescing window turns a burst into one push instead of five. */
+const AUTO_SYNC_DEBOUNCE_MS = 2000;
+let autoSyncTimer: number | undefined;
+
+/** Phase 5: called after every successful local create/edit/delete. The
+ *  mutation itself already marked the row dirty, so all this decides is
+ *  *when* the resulting push happens -- and it's deliberately
+ *  fire-and-forget, since a failed sync leaves the row dirty and the next
+ *  pass (this one, the periodic poll, or a manual "Sync now") retries it.
+ *  A user with no Google connection never schedules anything. */
+function scheduleAutoSync(get: () => CalendarState) {
+    if (!get().googleConnection) return;
+    window.clearTimeout(autoSyncTimer);
+    autoSyncTimer = window.setTimeout(() => {
+        void get().syncGoogleCalendar();
+    }, AUTO_SYNC_DEBOUNCE_MS);
+}
+
+/** The range most recently passed to loadEvents, so refreshEvents can
+ *  re-run it. Kept outside the store's own state because nothing renders
+ *  from it -- putting it in state would trigger re-renders for a value no
+ *  component reads. */
+let lastLoadedRange: { start: string; end: string } | null = null;
+
 function rowToEvent(row: CalendarEventRow): CalendarEvent {
     return {
         id: row.id,
@@ -193,6 +294,9 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
     events: [],
     calendars: [],
     exceptions: [],
+    googleConnection: null,
+    googleConnectionLoading: false,
+    googleSyncing: false,
     settings: DEFAULT_CALENDAR_SETTINGS,
     loading: false,
     settingsLoading: false,
@@ -201,6 +305,10 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
 
     load: async (userId) => {
         set({ userId, settingsLoading: true, settingsError: null });
+        // Independent of the settings/calendars pair below (its own loading
+        // flag, nothing else in load() depends on it finishing), so it's
+        // fired without blocking the rest of load().
+        void get().loadGoogleConnection(userId);
         const [settingsResult, calendarsResult] = await Promise.all([
             supabase
                 .from("user_preferences")
@@ -252,9 +360,157 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
         });
     },
 
+    loadGoogleConnection: async (userId) => {
+        set({ googleConnectionLoading: true });
+        const { data, error } = await supabase
+            .from("calendar_connections")
+            .select("id, provider_account_id, poll_interval_seconds")
+            .eq("user_id", userId)
+            .eq("provider", "google")
+            .maybeSingle();
+        if (error) {
+            console.error("Failed to load Google connection:", error.message);
+            set({ googleConnectionLoading: false });
+            return;
+        }
+        set({
+            googleConnection: data
+                ? rowToGoogleConnection(data as CalendarConnectionRow)
+                : null,
+            googleConnectionLoading: false,
+        });
+    },
+
+    startGoogleConnect: async () => {
+        const userId = get().userId;
+        if (!userId) return null;
+        // Generated client-side (rather than reading back the table's own
+        // gen_random_uuid() default) specifically so this insert never
+        // needs a SELECT policy on google_oauth_states -- the state value
+        // is already known locally the moment it's created.
+        const state = crypto.randomUUID();
+        // Recorded so google-oauth-callback can send the browser back to
+        // wherever this flow actually started (localhost during dev,
+        // production otherwise) instead of a single static APP_URL that
+        // can only ever be right for one environment.
+        const { error } = await supabase.from("google_oauth_states").insert({
+            state,
+            user_id: userId,
+            return_origin: window.location.origin,
+        });
+        if (error) {
+            console.error("Failed to start Google connect:", error.message);
+            return null;
+        }
+        return state;
+    },
+
+    disconnectGoogleConnection: async () => {
+        const userId = get().userId;
+        if (!userId) return false;
+        const { error } = await supabase
+            .from("calendar_connections")
+            .delete()
+            .eq("user_id", userId)
+            .eq("provider", "google");
+        if (error) {
+            console.error(
+                "Failed to disconnect Google Calendar:",
+                error.message,
+            );
+            return false;
+        }
+        set({ googleConnection: null });
+        return true;
+    },
+
+    countMigratableEvents: async () => {
+        const userId = get().userId;
+        if (!userId) return 0;
+        const { count, error } = await supabase
+            .from("calendar_events")
+            .select("id", { count: "exact", head: true })
+            .eq("user_id", userId)
+            .eq("source", "local")
+            .is("deleted_at", null);
+        if (error) {
+            console.error(
+                "Failed to count migratable events:",
+                error.message,
+            );
+            return 0;
+        }
+        return count ?? 0;
+    },
+
+    listGoogleCalendars: async () => {
+        const { data, error } = await supabase.functions.invoke(
+            "google-calendar-migrate",
+            { body: { action: "list" } },
+        );
+        if (error) {
+            console.error("Failed to list Google calendars:", error.message);
+            return null;
+        }
+        return (data?.calendars ?? []) as GoogleCalendarOption[];
+    },
+
+    migrateLocalEvents: async (option, googleCalendarId) => {
+        const userId = get().userId;
+        if (!userId) return false;
+        const { error } = await supabase.functions.invoke(
+            "google-calendar-migrate",
+            {
+                body: {
+                    action: "migrate",
+                    option,
+                    calendarId: googleCalendarId,
+                },
+            },
+        );
+        if (error) {
+            console.error("Failed to migrate local events:", error.message);
+            return false;
+        }
+        // The migration linked (or didn't link) the calendar server-side,
+        // so the store's copy of it is stale -- reloading is what makes
+        // needsGoogleMigration stop firing.
+        const { data: calendarRows } = await supabase
+            .from("calendars")
+            .select(CALENDAR_COLUMNS)
+            .eq("user_id", userId);
+        if (calendarRows) {
+            set({ calendars: (calendarRows as CalendarRow[]).map(rowToCalendar) });
+        }
+        await get().refreshEvents();
+        // "delete" links nothing, so there is nothing to sync afterward.
+        if (option !== "delete") void get().syncGoogleCalendar();
+        return true;
+    },
+
+    syncGoogleCalendar: async () => {
+        if (!get().googleConnection || get().googleSyncing) return false;
+        set({ googleSyncing: true });
+        const { error } = await supabase.functions.invoke(
+            "google-calendar-sync",
+            { body: {} },
+        );
+        if (error) {
+            console.error("Google Calendar sync failed:", error.message);
+            set({ googleSyncing: false });
+            return false;
+        }
+        // The sync rewrote rows entirely server-side, so whatever the UI is
+        // showing predates it.
+        await get().refreshEvents();
+        set({ googleSyncing: false });
+        return true;
+    },
+
     loadEvents: async (start, end) => {
         const userId = get().userId;
         if (!userId) return;
+        lastLoadedRange = { start, end };
         set({ loading: true, error: null });
 
         // Two separate queries, not one overlap filter: a recurring event's
@@ -329,6 +585,11 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
             exceptions,
             loading: false,
         });
+    },
+
+    refreshEvents: async () => {
+        if (!lastLoadedRange) return;
+        await get().loadEvents(lastLoadedRange.start, lastLoadedRange.end);
     },
 
     saveSettings: async (settings) => {
@@ -406,6 +667,7 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
                 a.startsAt.localeCompare(b.startsAt),
             ),
         }));
+        scheduleAutoSync(get);
         return nextEvent;
     },
 
@@ -467,6 +729,7 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
                 )
                 .sort((a, b) => a.startsAt.localeCompare(b.startsAt)),
         }));
+        scheduleAutoSync(get);
         return true;
     },
 
@@ -487,6 +750,7 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
         set((state) => ({
             events: state.events.filter((event) => event.id !== id),
         }));
+        scheduleAutoSync(get);
         return true;
     },
 
@@ -524,6 +788,7 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
                 next,
             ],
         }));
+        scheduleAutoSync(get);
         return true;
     },
 
@@ -564,19 +829,28 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
                 next,
             ],
         }));
+        scheduleAutoSync(get);
         return true;
     },
 
-    clear: () =>
+    clear: () => {
+        // A pending auto-sync belongs to the user who just signed out --
+        // letting it fire would run a sync with no session behind it.
+        window.clearTimeout(autoSyncTimer);
+        lastLoadedRange = null;
         set({
             userId: null,
             events: [],
             calendars: [],
             exceptions: [],
+            googleConnection: null,
+            googleConnectionLoading: false,
+            googleSyncing: false,
             settings: DEFAULT_CALENDAR_SETTINGS,
             loading: false,
             settingsLoading: false,
             error: null,
             settingsError: null,
-        }),
+        });
+    },
 }));
