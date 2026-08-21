@@ -1676,6 +1676,9 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                     const dateLabel = spansMultipleDays
                         ? `${formatDate(start, settings)} – ${formatDate(displayEnd, settings)}`
                         : formatDate(start, settings);
+                    const calendar = calendars.find(
+                        (item) => item.id === previewEvent.calendarId,
+                    );
 
                     return (
                         <div
@@ -1706,6 +1709,18 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                                   settings,
                                               )}`}
                                     </p>
+                                    {calendar && (
+                                        <p className="flex items-center gap-1.5 text-ink-soft">
+                                            <img
+                                                src="/calendar-regular-full.svg"
+                                                width={18}
+                                                height={18}
+                                                alt=""
+                                                className="shrink-0"
+                                            />
+                                            {calendar.name}
+                                        </p>
+                                    )}
                                     {previewEvent.location && (
                                         <p className="text-ink-soft">
                                             {previewEvent.location}
