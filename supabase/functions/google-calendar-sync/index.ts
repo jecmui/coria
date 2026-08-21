@@ -254,13 +254,12 @@ async function pullCalendar(
     accessToken: string,
     userId: string,
     calendar: LocalCalendar,
-    timeZone: string,
 ): Promise<number> {
     const { items, syncToken } = await fetchRemoteEvents(
         accessToken,
         calendar,
     );
-    const mapped = items.map((item) => mapGoogleEvent(item, timeZone));
+    const mapped = items.map((item) => mapGoogleEvent(item));
 
     // Masters before exceptions, so a series and an override of it
     // arriving in the same batch are applied in an order where the
@@ -381,7 +380,6 @@ async function pushExceptions(
             master.external_id,
             row.original_start_time,
             master.all_day,
-            timeZone,
         );
 
         if (row.is_cancelled) {
@@ -483,13 +481,7 @@ Deno.serve(async (req) => {
         let pulled = 0;
         let pushed = 0;
         for (const calendar of (calendars ?? []) as LocalCalendar[]) {
-            pulled += await pullCalendar(
-                admin,
-                accessToken,
-                userId,
-                calendar,
-                timeZone,
-            );
+            pulled += await pullCalendar(admin, accessToken, userId, calendar);
             if (calendar.is_writable) {
                 pushed += await pushCalendar(
                     admin,

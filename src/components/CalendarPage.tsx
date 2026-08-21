@@ -18,6 +18,7 @@ import {
     computeAllDayDayInfo,
     dateInputValue,
     expandRecurringEvents,
+    eventDateZone,
     eventOverlapsDay,
     floatingUtcToDateValue,
     formatDate,
@@ -229,6 +230,31 @@ function repeatStateFromRule(
     return state;
 }
 
+/** Fills the draft's four date/time inputs from a stored event.
+ *
+ *  Two things differ for an all-day event. Its instants are read in UTC, not
+ *  the viewer's zone, because it's a floating calendar date rather than a
+ *  real instant (see eventDateZone in lib/calendar.ts). And its stored end is
+ *  *exclusive* -- midnight starting the day after the last day it covers --
+ *  while the form's End field means the last day it covers, so the stored end
+ *  is stepped back one instant to name that day. handleSaveEvent applies the
+ *  matching +1 day on the way out, so the pair round-trips. */
+function draftDatesFromEvent(
+    event: CalendarEvent,
+    timeZone: string,
+): Pick<EventDraft, "startDate" | "startTime" | "endDate" | "endTime"> {
+    const zone = eventDateZone(event, timeZone);
+    const start = new Date(event.startsAt);
+    const rawEnd = new Date(event.endsAt);
+    const end = event.allDay ? new Date(rawEnd.getTime() - 1) : rawEnd;
+    return {
+        startDate: dateInputValue(start, zone),
+        startTime: timeInputValue(start, zone),
+        endDate: dateInputValue(end, zone),
+        endTime: timeInputValue(end, zone),
+    };
+}
+
 /** Human-readable labels for the repeat picker's fixed presets, derived
  *  live from the draft's start date so e.g. "Monthly" reads as "Monthly on
  *  the third Tuesday" once a start date is chosen. */
@@ -427,25 +453,19 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
             title: event.title,
             description: event.description,
             location: event.location,
-            startDate: dateInputValue(
-                new Date(event.startsAt),
-                settings.timeZone,
-            ),
-            startTime: timeInputValue(
-                new Date(event.startsAt),
-                settings.timeZone,
-            ),
-            endDate: dateInputValue(new Date(event.endsAt), settings.timeZone),
-            endTime: timeInputValue(new Date(event.endsAt), settings.timeZone),
+            ...draftDatesFromEvent(event, settings.timeZone),
             allDay: event.allDay,
             // The rule's weekday/nth were derived from whichever time zone
             // the event was actually authored in (Google's per-event zone
-            // when it has one), not necessarily the calendar's own -- same
-            // reasoning as expandRecurringEvents.
+            // when it has one, UTC for an all-day series), not necessarily
+            // the calendar's own -- same reasoning as expandRecurringEvents.
             ...repeatStateFromRule(
                 event.recurrenceRule,
                 event.startsAt,
-                event.eventTimeZone ?? settings.timeZone,
+                eventDateZone(
+                    event,
+                    event.eventTimeZone ?? settings.timeZone,
+                ),
             ),
         });
     }
@@ -464,22 +484,7 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
             title: clicked.title,
             description: clicked.description,
             location: clicked.location,
-            startDate: dateInputValue(
-                new Date(clicked.startsAt),
-                settings.timeZone,
-            ),
-            startTime: timeInputValue(
-                new Date(clicked.startsAt),
-                settings.timeZone,
-            ),
-            endDate: dateInputValue(
-                new Date(clicked.endsAt),
-                settings.timeZone,
-            ),
-            endTime: timeInputValue(
-                new Date(clicked.endsAt),
-                settings.timeZone,
-            ),
+            ...draftDatesFromEvent(clicked, settings.timeZone),
             allDay: clicked.allDay,
             ...DEFAULT_REPEAT_STATE,
             occurrenceEdit: {
@@ -539,9 +544,12 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
         }
         // All-day events ignore the time-of-day inputs and instead span the
         // full day(s) from startDate through endDate, exclusive end (the
-        // start of the day after endDate), matching Google Calendar.
+        // start of the day after endDate), matching Google Calendar. They're
+        // anchored to UTC midnight rather than the viewer's zone because an
+        // all-day event is a floating calendar date, not an instant -- see
+        // eventDateZone in lib/calendar.ts.
         const startsAt = draft.allDay
-            ? inputValuesToUtcIso(draft.startDate, "00:00", settings.timeZone)
+            ? inputValuesToUtcIso(draft.startDate, "00:00", "UTC")
             : inputValuesToUtcIso(
                   draft.startDate,
                   draft.startTime,
@@ -551,7 +559,7 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
             ? inputValuesToUtcIso(
                   addDaysToDateValue(draft.endDate, 1),
                   "00:00",
-                  settings.timeZone,
+                  "UTC",
               )
             : inputValuesToUtcIso(
                   draft.endDate,
@@ -604,7 +612,9 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                     count: draft.repeatCount,
                 },
                 new Date(startsAt),
-                settings.timeZone,
+                // An all-day series' anchor is UTC midnight, so its BYDAY
+                // weekday has to be read there too -- see eventDateZone.
+                draft.allDay ? "UTC" : settings.timeZone,
             ),
         };
         const saved = draft.id
@@ -1650,7 +1660,10 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                     const repeatState = repeatStateFromRule(
                         master.recurrenceRule,
                         master.startsAt,
-                        master.eventTimeZone ?? settings.timeZone,
+                        eventDateZone(
+                            master,
+                            master.eventTimeZone ?? settings.timeZone,
+                        ),
                     );
                     const repeatLabel =
                         repeatState.repeatPreset === "none"
@@ -1674,14 +1687,21 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                     const displayEnd = previewEvent.allDay
                         ? new Date(rawEnd.getTime() - 1)
                         : rawEnd;
+                    // An all-day event's instants name a floating calendar
+                    // date, so they're read in UTC rather than the viewer's
+                    // zone -- see eventDateZone in lib/calendar.ts.
+                    const previewZone = eventDateZone(
+                        previewEvent,
+                        settings.timeZone,
+                    );
                     const spansMultipleDays = !sameCalendarDay(
                         start,
                         displayEnd,
-                        settings.timeZone,
+                        previewZone,
                     );
                     const dateLabel = spansMultipleDays
-                        ? `${formatDate(start, settings)} – ${formatDate(displayEnd, settings)}`
-                        : formatDate(start, settings);
+                        ? `${formatDate(start, settings, previewZone)} – ${formatDate(displayEnd, settings, previewZone)}`
+                        : formatDate(start, settings, previewZone);
                     const calendar = calendars.find(
                         (item) => item.id === previewEvent.calendarId,
                     );

@@ -8,12 +8,18 @@
  *    - timed:   { dateTime: "2026-08-21T09:00:00-04:00", timeZone: "..." }
  *    - all-day: { date: "2026-08-21" }
  *  A timed dateTime carries its own offset, so it parses straight to the
- *  right instant. An all-day `date` carries no time at all, and has to be
- *  read as midnight *in the calendar's zone* to land on the same instant
- *  the local UI would have produced for the same day -- see
- *  inputValuesToUtcIso in src/lib/calendar.ts, which this mirrors. Getting
- *  that wrong shifts every all-day event by the UTC offset, which is
- *  exactly how all-day events end up rendering a day early or late. */
+ *  right instant. An all-day `date` carries no time and no zone, because it
+ *  isn't an instant at all -- it's a floating calendar date, meaning "that
+ *  whole day, wherever you are". Coria stores it as midnight *UTC*, used
+ *  purely as a carrier for the date, and the UI reads it back in UTC too
+ *  (see eventDateZone in src/lib/calendar.ts).
+ *
+ *  Anchoring an all-day event to any real zone instead is what makes it
+ *  render a day early or late: the writer and the reader then have to agree
+ *  on that zone exactly, and they don't have to disagree by much -- a null
+ *  user_preferences.time_zone falling back to "UTC" on the server while the
+ *  browser falls back to its own zone is enough to shift every all-day event
+ *  by the UTC offset and render it across two days. */
 
 /** A wall-clock time in `timeZone`, as the UTC instant it corresponds to.
  *  Mirrors localWallTimeToUtcIso in src/lib/calendar.ts -- same
@@ -71,39 +77,32 @@ export interface GoogleDateTime {
     timeZone?: string;
 }
 
-/** Google's start/end shape -> a UTC instant. */
-export function googleDateTimeToUtcIso(
-    value: GoogleDateTime,
-    calendarTimeZone: string,
-): string {
+/** Google's start/end shape -> a UTC instant. Needs no zone of its own: a
+ *  timed dateTime always arrives carrying its offset, and an all-day date is
+ *  floating and anchored to UTC (see the note at the top of this file). */
+export function googleDateTimeToUtcIso(value: GoogleDateTime): string {
     if (value.dateTime) return new Date(value.dateTime).toISOString();
     if (!value.date) {
         throw new Error("Google date/time had neither dateTime nor date");
     }
     const [year, month, day] = value.date.split("-").map(Number);
-    // The event's own timeZone when Google supplied one, since an all-day
-    // event on a calendar in another zone still means "that whole day
-    // there", not here.
-    return wallTimeToUtcIso(
-        year,
-        month,
-        day,
-        0,
-        0,
-        value.timeZone ?? calendarTimeZone,
-    );
+    // Deliberately UTC, ignoring value.timeZone even when Google sends one:
+    // an all-day date is floating, so pinning it to a real zone would shift
+    // the day it lands on for any reader in a different one.
+    return wallTimeToUtcIso(year, month, day, 0, 0, "UTC");
 }
 
 /** A UTC instant -> Google's start/end shape. All-day events collapse back
  *  to a bare date; Coria already stores their exclusive end (midnight of
  *  the day after), which is the same convention Google uses, so no
- *  off-by-one adjustment is needed in either direction. */
+ *  off-by-one adjustment is needed in either direction. Their date is read
+ *  in UTC, matching the zone they were anchored in on the way in. */
 export function utcIsoToGoogleDateTime(
     iso: string,
     allDay: boolean,
     timeZone: string,
 ): GoogleDateTime {
-    if (allDay) return { date: utcIsoToDateValue(iso, timeZone) };
+    if (allDay) return { date: utcIsoToDateValue(iso, "UTC") };
     // timeZone alongside an offset-bearing dateTime is redundant for
     // one-off events but load-bearing for recurring ones -- it's the zone
     // Google expands the RRULE in.
@@ -153,7 +152,6 @@ export interface MappedGoogleEvent {
  *  and mergeGoogleEventPatch in src/lib/calendar.ts. */
 export function mapGoogleEvent(
     raw: Record<string, unknown>,
-    calendarTimeZone: string,
 ): MappedGoogleEvent {
     const start = (raw.start ?? {}) as GoogleDateTime;
     const end = (raw.end ?? {}) as GoogleDateTime;
@@ -166,11 +164,11 @@ export function mapGoogleEvent(
     // so the epoch stands in rather than throwing.
     const hasTimes = Boolean(start.dateTime || start.date);
     const startsAt = hasTimes
-        ? googleDateTimeToUtcIso(start, calendarTimeZone)
+        ? googleDateTimeToUtcIso(start)
         : new Date(0).toISOString();
     const endsAt =
         hasTimes && (end.dateTime || end.date)
-            ? googleDateTimeToUtcIso(end, calendarTimeZone)
+            ? googleDateTimeToUtcIso(end)
             : startsAt;
 
     const originalStart = raw.originalStartTime as GoogleDateTime | undefined;
@@ -190,7 +188,7 @@ export function mapGoogleEvent(
         cancelled,
         recurringEventId: (raw.recurringEventId as string) ?? null,
         originalStartTime: originalStart
-            ? googleDateTimeToUtcIso(originalStart, calendarTimeZone)
+            ? googleDateTimeToUtcIso(originalStart)
             : null,
     };
 }
@@ -271,10 +269,9 @@ export function buildInstanceId(
     masterExternalId: string,
     originalStartIso: string,
     allDay: boolean,
-    timeZone: string,
 ): string {
     if (allDay) {
-        return `${masterExternalId}_${utcIsoToDateValue(originalStartIso, timeZone).replace(/-/g, "")}`;
+        return `${masterExternalId}_${utcIsoToDateValue(originalStartIso, "UTC").replace(/-/g, "")}`;
     }
     const compact = new Date(originalStartIso)
         .toISOString()
