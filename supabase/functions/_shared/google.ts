@@ -261,6 +261,25 @@ export async function updateEvent(
     )) as Record<string, unknown>;
 }
 
+/** Relocates an event to another calendar, keeping its id and everything
+ *  hanging off it -- attendees and their responses, any Meet link, the
+ *  revision history. Google models this as its own operation precisely
+ *  because a plain update can't do it: an event id only exists within the
+ *  calendar that holds it, so writing to the destination would just 404. */
+export async function moveEvent(
+    accessToken: string,
+    fromCalendarId: string,
+    eventId: string,
+    toCalendarId: string,
+): Promise<Record<string, unknown>> {
+    return (await googleFetch(
+        accessToken,
+        `/calendars/${encodeURIComponent(fromCalendarId)}/events/${encodeURIComponent(eventId)}/move` +
+            `?destination=${encodeURIComponent(toCalendarId)}`,
+        { method: "POST" },
+    )) as Record<string, unknown>;
+}
+
 /** Deletes an event, treating "already gone" as success -- a 404 here means
  *  the deletion this push exists to perform has effectively happened, and
  *  failing the whole sync over it would just retry forever. */

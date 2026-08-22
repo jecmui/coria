@@ -82,11 +82,11 @@ interface EventDraft {
         masterEventId: string;
         originalStartTime: string;
     };
-    /** The calendar this event already belongs to -- absent when creating a
-     *  new event (it lands on the primary calendar by default). Purely
-     *  informational: nothing in handleSaveEvent sends it back, it only
-     *  drives whether Save/Delete are disabled for a calendar Coria can't
-     *  write to (see the "manage synced calendars" picker in Settings). */
+    /** The calendar this event belongs to, chosen with the picker at the
+     *  bottom of the form. Absent only until the calendars have loaded, in
+     *  which case saving falls back to the primary calendar. Also drives
+     *  whether the form is editable at all -- a calendar Coria can't write
+     *  to disables it (see "manage synced calendars" in Settings). */
     calendarId?: string;
 }
 
@@ -507,6 +507,7 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
             endDate: dateInputValue(end, settings.timeZone),
             endTime: timeInputValue(end, settings.timeZone),
             allDay: false,
+            calendarId: calendars.find((calendar) => calendar.isPrimary)?.id,
             // Null means "inherit the calendar's color" -- a new event picks
             // up whichever calendar it lands on rather than a fixed color.
             color: null,
@@ -788,6 +789,7 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
             endsAt,
             allDay: draft.allDay,
             color: draft.color,
+            calendarId: draft.calendarId,
             recurrenceRule: buildRecurrenceRule(
                 draft.repeatPreset,
                 {
@@ -921,6 +923,14 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
             ?.isWritable === false,
     );
     const fillAlpha = settings.opaqueEvents ? 1 : TRANSPARENT_FILL_ALPHA;
+    // Only calendars Coria can write to are offered as destinations -- a
+    // read-only one would just reject the push. The event's own calendar is
+    // always included even when it's read-only, so the picker shows where the
+    // event actually is rather than some other name; the surrounding fieldset
+    // is disabled in that case anyway.
+    const calendarOptions = calendars.filter(
+        (calendar) => calendar.isWritable || calendar.id === draft?.calendarId,
+    );
     // A color that isn't one of the presets -- either picked here, or pulled
     // from a Google calendar whose own color isn't in the event palette.
     const isCustomColor = Boolean(
@@ -1423,11 +1433,17 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
 
             {draft && (
                 <div
-                    className="fixed inset-0 z-100 flex items-center justify-center bg-black/40 px-4"
+                    className="fixed inset-0 z-100 flex items-center justify-center bg-black/40 p-4"
                     onClick={dismissDraft}
                 >
-                    <div className="w-full max-w-lg rounded-2xl border border-paper-edge bg-paper p-5 shadow-[0_16px_48px_rgba(0,0,0,0.35)]">
-                        <div className="mb-4 flex items-center justify-between">
+                    {/* Capped to the viewport and split into three: the title
+                        and the Save/Cancel row stay put while only the fields
+                        scroll. The form is tall enough (repeat options, colour
+                        swatches, description) to outgrow a laptop screen, and
+                        without this the panel is clipped at both ends at once
+                        -- neither the title nor the buttons reachable. */}
+                    <div className="flex max-h-full w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-paper-edge bg-paper shadow-[0_16px_48px_rgba(0,0,0,0.35)]">
+                        <div className="flex shrink-0 items-center justify-between px-5 pt-5 pb-3">
                             <h2 className="font-display text-lg font-semibold">
                                 {draft.occurrenceEdit
                                     ? "Edit this event"
@@ -1443,6 +1459,7 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                 ×
                             </button>
                         </div>
+                        <div className="min-h-0 flex-1 overflow-y-auto px-5">
                         {readOnlyCalendar && (
                             <p className="mb-3 text-xs text-ink-soft">
                                 This calendar is view-only in Coria — you can't
@@ -1862,6 +1879,46 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                     className="w-full rounded-xl border border-paper-edge bg-board/40 px-3 py-2 text-sm outline-none"
                                 />
                             </label>
+                            <label className="block space-y-1">
+                                <span className="text-xs font-semibold text-ink-soft">
+                                    Description
+                                </span>
+                                <textarea
+                                    value={draft.description}
+                                    onChange={(event) =>
+                                        setDraft({
+                                            ...draft,
+                                            description: event.target.value,
+                                        })
+                                    }
+                                    rows={3}
+                                    className="w-full resize-none rounded-xl border border-paper-edge bg-board/40 px-3 py-2 text-sm outline-none"
+                                />
+                            </label>
+                            <label className="block space-y-1">
+                                <span className="text-xs font-semibold text-ink-soft">
+                                    Calendar
+                                </span>
+                                <select
+                                    value={draft.calendarId ?? ""}
+                                    onChange={(event) =>
+                                        setDraft({
+                                            ...draft,
+                                            calendarId: event.target.value,
+                                        })
+                                    }
+                                    className="w-full rounded-xl border border-paper-edge bg-board/40 px-3 py-2 text-sm outline-none"
+                                >
+                                    {calendarOptions.map((calendar) => (
+                                        <option
+                                            key={calendar.id}
+                                            value={calendar.id}
+                                        >
+                                            {calendar.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </label>
                             <div className="space-y-1">
                                 <span className="text-xs font-semibold text-ink-soft">
                                     Color
@@ -1969,29 +2026,15 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                     </span>
                                 </div>
                             </div>
-                            <label className="block space-y-1">
-                                <span className="text-xs font-semibold text-ink-soft">
-                                    Description
-                                </span>
-                                <textarea
-                                    value={draft.description}
-                                    onChange={(event) =>
-                                        setDraft({
-                                            ...draft,
-                                            description: event.target.value,
-                                        })
-                                    }
-                                    rows={3}
-                                    className="w-full resize-none rounded-xl border border-paper-edge bg-board/40 px-3 py-2 text-sm outline-none"
-                                />
-                            </label>
                         </fieldset>
+                        </div>
+                        <div className="shrink-0 px-5 pt-3 pb-5">
                         {draftError && (
-                            <p className="mt-3 text-xs text-pin-timer">
+                            <p className="mb-3 text-xs text-pin-timer">
                                 {draftError}
                             </p>
                         )}
-                        <div className="mt-5 flex justify-between gap-2">
+                        <div className="flex justify-between gap-2">
                             {draft.id || draft.occurrenceEdit ? (
                                 <button
                                     type="button"
@@ -2026,6 +2069,7 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                     Save
                                 </button>
                             </div>
+                        </div>
                         </div>
                     </div>
                 </div>
@@ -2093,10 +2137,10 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
 
                     return (
                         <div
-                            className="fixed inset-0 z-100 flex items-center justify-center bg-black/40 px-4"
+                            className="fixed inset-0 z-100 flex items-center justify-center bg-black/40 p-4"
                             onClick={dismissPreview}
                         >
-                            <div className="w-full max-w-md rounded-2xl border border-paper-edge bg-paper p-5 shadow-[0_16px_48px_rgba(0,0,0,0.35)]">
+                            <div className="max-h-full w-full max-w-md overflow-y-auto rounded-2xl border border-paper-edge bg-paper p-5 shadow-[0_16px_48px_rgba(0,0,0,0.35)]">
                                 <div className="mb-3 flex items-start justify-between gap-2">
                                     <h2 className="font-display text-xl font-semibold">
                                         {previewEvent.title}
@@ -2187,10 +2231,10 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
 
             {scopeChoice && (
                 <div
-                    className="fixed inset-0 z-100 flex items-center justify-center bg-black/40 px-4"
+                    className="fixed inset-0 z-100 flex items-center justify-center bg-black/40 p-4"
                     onClick={dismissScopeChoice}
                 >
-                    <div className="w-full max-w-xs rounded-2xl border border-paper-edge bg-paper p-5 shadow-[0_16px_48px_rgba(0,0,0,0.35)]">
+                    <div className="max-h-full w-full max-w-xs overflow-y-auto rounded-2xl border border-paper-edge bg-paper p-5 shadow-[0_16px_48px_rgba(0,0,0,0.35)]">
                         <h2 className="mb-1 font-display text-base font-semibold">
                             {scopeChoice.title}
                         </h2>

@@ -9,6 +9,7 @@ import {
     listAllCalendars,
     listEventColors,
     listEventsPage,
+    moveEvent,
     updateEvent,
 } from "../_shared/google.ts";
 import {
@@ -158,6 +159,7 @@ async function applyRemoteMaster(
         event_time_zone: remote.eventTimeZone,
         external_raw: remote.externalRaw,
         source: "google",
+        synced_calendar_external_id: calendar.external_calendar_id,
     };
 
     if (!existing) {
@@ -303,7 +305,7 @@ async function pushCalendar(
     const { data: rows } = await admin
         .from("calendar_events")
         .select(
-            "id, external_id, deleted_at, title, description, location, starts_at, ends_at, all_day, color, recurrence_rule, event_time_zone, external_raw",
+            "id, external_id, deleted_at, title, description, location, starts_at, ends_at, all_day, color, recurrence_rule, event_time_zone, external_raw, synced_calendar_external_id",
         )
         .eq("calendar_id", calendar.id)
         .eq("dirty", true);
@@ -330,6 +332,19 @@ async function pushCalendar(
 
         const body = buildGoogleEventBody(row, timeZone, palette);
         if (row.external_id) {
+            // The event was moved to a different calendar in Coria. Google
+            // keys an event id to the calendar holding it, so it has to be
+            // relocated before anything can be written to it here -- an
+            // update aimed at the destination would 404.
+            const movedFrom = row.synced_calendar_external_id;
+            if (movedFrom && movedFrom !== calendar.external_calendar_id) {
+                await moveEvent(
+                    accessToken,
+                    movedFrom,
+                    row.external_id,
+                    calendar.external_calendar_id,
+                );
+            }
             const updated = await updateEvent(
                 accessToken,
                 calendar.external_calendar_id,
@@ -338,7 +353,12 @@ async function pushCalendar(
             );
             await admin
                 .from("calendar_events")
-                .update({ external_raw: updated, dirty: false })
+                .update({
+                    external_raw: updated,
+                    dirty: false,
+                    synced_calendar_external_id:
+                        calendar.external_calendar_id,
+                })
                 .eq("id", row.id);
         } else {
             const created = await insertEvent(
@@ -353,6 +373,8 @@ async function pushCalendar(
                     external_raw: created,
                     source: "google",
                     dirty: false,
+                    synced_calendar_external_id:
+                        calendar.external_calendar_id,
                 })
                 .eq("id", row.id);
         }

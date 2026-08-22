@@ -707,9 +707,9 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
     addEvent: async (event) => {
         const userId = get().userId;
         if (!userId) return null;
-        // No calendar picker in the UI yet -- every locally-created event
-        // lands on the user's primary calendar unless a caller (e.g. a
-        // future Google-sync pull) explicitly names one.
+        // The event dialog's calendar picker names one; anything else (the
+        // Google-sync pull, a quick add before the calendars have loaded)
+        // falls back to the user's primary calendar.
         const calendarId =
             event.calendarId ??
             get().calendars.find((calendar) => calendar.isPrimary)?.id;

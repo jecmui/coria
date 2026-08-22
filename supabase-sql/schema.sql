@@ -548,3 +548,18 @@ alter table user_preferences
 -- through. Off by default, matching how they've always been drawn.
 alter table user_preferences
   add column opaque_events boolean not null default false;
+
+-- The Google calendar this event was last pushed to. Changing an event's
+-- calendar_id has to move it at Google too, and a move needs to name where
+-- it is now -- which calendar_id no longer says once it has been changed.
+alter table calendar_events
+  add column synced_calendar_external_id text;
+
+-- Backfill: every already-synced event sits in its own calendar's Google
+-- calendar, since until now there was no way to move one.
+update calendar_events ce
+set synced_calendar_external_id = c.external_calendar_id
+from calendars c
+where c.id = ce.calendar_id
+  and ce.external_id is not null
+  and c.external_calendar_id is not null;
