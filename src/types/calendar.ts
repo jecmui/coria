@@ -32,6 +32,11 @@ export interface CalendarEvent {
     /** True for date-only events with no specific time, as Google Calendar
      *  represents all-day events. */
     allDay: boolean;
+    /** This event's own color, as a hex string. Null means it inherits its
+     *  calendar's color -- the same precedence Google uses, where an event's
+     *  colorId overrides the calendar it sits on. See resolveEventColor in
+     *  lib/eventColors.ts. */
+    color: string | null;
     /** Where the event originated. */
     source: CalendarEventSource;
     /** The originating provider's event id (e.g. Google's), used to map
@@ -133,4 +138,10 @@ export interface CalendarSettings {
     timeFormat: "12h" | "24h";
     timeZone: string;
     defaultEventDuration: number;
+    /** When on, an event color chosen in Coria is written back to Google on
+     *  the next sync. Off by default, so colors stay local unless asked for. */
+    syncEventColors: boolean;
+    /** When on, event blocks are filled solid rather than letting the hour
+     *  grid show through them. */
+    opaqueEvents: boolean;
 }

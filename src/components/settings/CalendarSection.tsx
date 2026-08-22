@@ -539,6 +539,53 @@ export const CalendarSection = forwardRef<
                         className={inputClass}
                     />
                 </label>
+
+                <label className="flex items-start gap-2 md:col-span-2">
+                    <input
+                        type="checkbox"
+                        checked={calendarForm.opaqueEvents}
+                        onChange={(event) =>
+                            setCalendarForm({
+                                ...calendarForm,
+                                opaqueEvents: event.target.checked,
+                            })
+                        }
+                        className="mt-0.5 h-4 w-4 accent-pin-todo"
+                    />
+                    <span className="space-y-0.5">
+                        <span className="block font-body text-sm font-medium text-ink">
+                            Solid event colors
+                        </span>
+                        <span className="block font-body text-xs text-ink-soft">
+                            Fill events with their full color instead of
+                            letting the grid lines show through.
+                        </span>
+                    </span>
+                </label>
+
+                <label className="flex items-start gap-2 md:col-span-2">
+                    <input
+                        type="checkbox"
+                        checked={calendarForm.syncEventColors}
+                        onChange={(event) =>
+                            setCalendarForm({
+                                ...calendarForm,
+                                syncEventColors: event.target.checked,
+                            })
+                        }
+                        className="mt-0.5 h-4 w-4 accent-pin-todo"
+                    />
+                    <span className="space-y-0.5">
+                        <span className="block font-body text-sm font-medium text-ink">
+                            Send color changes to Google
+                        </span>
+                        <span className="block font-body text-xs text-ink-soft">
+                            Colors come from Google either way. Turn this on to
+                            also send a color you pick here back, matched to the
+                            nearest Google color.
+                        </span>
+                    </span>
+                </label>
             </div>
 
             {calendarError && (

@@ -21,6 +21,12 @@
  *  browser falls back to its own zone is enough to shift every all-day event
  *  by the UTC offset and render it across two days. */
 
+import {
+    colorIdToHex,
+    hexToNearestColorId,
+    type EventPalette,
+} from "./colors.ts";
+
 /** A wall-clock time in `timeZone`, as the UTC instant it corresponds to.
  *  Mirrors localWallTimeToUtcIso in src/lib/calendar.ts -- same
  *  measure-the-offset-then-subtract-it trick, since neither runtime has a
@@ -134,6 +140,9 @@ export interface MappedGoogleEvent {
     startsAt: string;
     endsAt: string;
     allDay: boolean;
+    /** Resolved from Google's colorId, or null when the event has none of
+     *  its own and should inherit its calendar's color. */
+    color: string | null;
     recurrenceRule: string | null;
     eventTimeZone: string | null;
     externalRaw: Record<string, unknown>;
@@ -152,6 +161,7 @@ export interface MappedGoogleEvent {
  *  and mergeGoogleEventPatch in src/lib/calendar.ts. */
 export function mapGoogleEvent(
     raw: Record<string, unknown>,
+    palette: EventPalette,
 ): MappedGoogleEvent {
     const start = (raw.start ?? {}) as GoogleDateTime;
     const end = (raw.end ?? {}) as GoogleDateTime;
@@ -181,6 +191,7 @@ export function mapGoogleEvent(
         startsAt,
         endsAt,
         allDay,
+        color: colorIdToHex(raw.colorId as string | undefined, palette),
         recurrenceRule: recurrenceToRule(raw.recurrence as string[]),
         eventTimeZone: start.timeZone ?? null,
         externalRaw: raw,
@@ -217,6 +228,7 @@ export interface CoriaEventForPush {
     starts_at: string;
     ends_at: string;
     all_day: boolean;
+    color: string | null;
     recurrence_rule: string | null;
     event_time_zone: string | null;
     external_raw: Record<string, unknown> | null;
@@ -232,6 +244,9 @@ export interface CoriaEventForPush {
 export function buildGoogleEventBody(
     event: CoriaEventForPush,
     calendarTimeZone: string,
+    /** Only set when the user has turned color push-back on -- without it
+     *  the event's colorId is left exactly as Google had it. */
+    palette: EventPalette | null,
 ): Record<string, unknown> {
     const timeZone = event.event_time_zone ?? calendarTimeZone;
     const patch: Record<string, unknown> = {
@@ -256,6 +271,16 @@ export function buildGoogleEventBody(
     }
 
     const merged = { ...(event.external_raw ?? {}), ...patch };
+    if (palette) {
+        // This is a PUT (events.update), so the body replaces the event
+        // wholesale: setting colorId recolors it, and dropping the key is
+        // what clears a color back to the calendar's own.
+        const colorId = event.color
+            ? hexToNearestColorId(event.color, palette)
+            : null;
+        if (colorId) merged.colorId = colorId;
+        else delete merged.colorId;
+    }
     for (const field of READ_ONLY_FIELDS) delete merged[field];
     return merged;
 }

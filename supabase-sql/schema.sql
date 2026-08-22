@@ -141,7 +141,7 @@ alter table tasks
 alter table board_widgets
   add column mobile_order integer not null default 0;
 
--- Appearance settings. The colour columns only apply when the theme is
+-- Appearance settings. The color columns only apply when the theme is
 -- 'custom'; Light/Dark/System use built-in palettes instead.
 alter table profiles
   add column appearance_theme text not null default 'light',
@@ -533,3 +533,18 @@ alter table calendars
 -- All-day events are plain dates, so they now sit at UTC rather than the
 -- user's zone, which could shift them a day. Clearing the token re-pulls.
 update calendars set sync_token = null where external_calendar_id is not null;
+
+-- Event color, as a hex string. Null means "use the calendar's color",
+-- which is how Google works: an event's own color overrides its calendar's.
+alter table calendar_events
+  add column color text;
+
+-- When on, a color changed in Coria is written back to Google on the next
+-- sync. Off by default, so colors stay local unless the user opts in.
+alter table user_preferences
+  add column sync_event_colors boolean not null default false;
+
+-- When on, event blocks are filled solid instead of letting the grid show
+-- through. Off by default, matching how they've always been drawn.
+alter table user_preferences
+  add column opaque_events boolean not null default false;

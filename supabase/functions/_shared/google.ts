@@ -136,6 +136,9 @@ export interface GoogleCalendarListEntry {
     summary: string;
     primary?: boolean;
     accessRole: string;
+    /** The calendar's own color, as the hex Google shows it in. Every event
+     *  on this calendar inherits it unless it carries a colorId of its own. */
+    backgroundColor?: string;
 }
 
 /** The user's own Google calendars, for Phase 3's "add them to an existing
@@ -166,6 +169,23 @@ export async function listAllCalendars(
         "/users/me/calendarList",
     )) as { items?: GoogleCalendarListEntry[] };
     return data.items ?? [];
+}
+
+/** Google's event color palette: colorId -> { background, foreground }. The
+ *  eleven entries a colorId can name are served separately from the events
+ *  themselves, so a pull has to resolve them here before it can store a real
+ *  hex -- see colorIdToHex in colors.ts. */
+export async function listEventColors(
+    accessToken: string,
+): Promise<Record<string, string>> {
+    const data = (await googleFetch(accessToken, "/colors")) as {
+        event?: Record<string, { background?: string }>;
+    };
+    const palette: Record<string, string> = {};
+    for (const [id, value] of Object.entries(data.event ?? {})) {
+        if (value.background) palette[id] = value.background;
+    }
+    return palette;
 }
 
 /** Phase 3's "create a new calendar for these events" option. */

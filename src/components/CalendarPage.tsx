@@ -2,6 +2,12 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { RRule, Weekday } from "rrule";
 import { useCalendarStore } from "../store/calendarStore";
 import { useModalDismiss } from "../lib/useModalDismiss";
+import {
+    EVENT_COLOR_SWATCHES,
+    TRANSPARENT_FILL_ALPHA,
+    eventBlockStyle,
+    resolveEventColor,
+} from "../lib/eventColors";
 import type { CalendarEvent, CalendarSettings } from "../types/calendar";
 import type {
     CustomRepeatUnit,
@@ -56,6 +62,8 @@ interface EventDraft {
     endDate: string;
     endTime: string;
     allDay: boolean;
+    /** The event's own color, or null to inherit its calendar's. */
+    color: string | null;
     repeatPreset: RepeatPreset;
     customInterval: number;
     customUnit: CustomRepeatUnit;
@@ -414,6 +422,9 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
             endDate: dateInputValue(end, settings.timeZone),
             endTime: timeInputValue(end, settings.timeZone),
             allDay: false,
+            // Null means "inherit the calendar's color" -- a new event picks
+            // up whichever calendar it lands on rather than a fixed color.
+            color: null,
             ...DEFAULT_REPEAT_STATE,
         };
     }
@@ -455,6 +466,7 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
             location: event.location,
             ...draftDatesFromEvent(event, settings.timeZone),
             allDay: event.allDay,
+            color: event.color,
             // The rule's weekday/nth were derived from whichever time zone
             // the event was actually authored in (Google's per-event zone
             // when it has one, UTC for an all-day series), not necessarily
@@ -486,6 +498,7 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
             location: clicked.location,
             ...draftDatesFromEvent(clicked, settings.timeZone),
             allDay: clicked.allDay,
+            color: clicked.color,
             ...DEFAULT_REPEAT_STATE,
             occurrenceEdit: {
                 masterEventId: clicked.instanceOf!,
@@ -599,6 +612,7 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
             startsAt,
             endsAt,
             allDay: draft.allDay,
+            color: draft.color,
             recurrenceRule: buildRecurrenceRule(
                 draft.repeatPreset,
                 {
@@ -731,6 +745,15 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
         draft?.calendarId &&
             calendars.find((calendar) => calendar.id === draft.calendarId)
                 ?.isWritable === false,
+    );
+    const fillAlpha = settings.opaqueEvents ? 1 : TRANSPARENT_FILL_ALPHA;
+    // A color that isn't one of the presets -- either picked here, or pulled
+    // from a Google calendar whose own color isn't in the event palette.
+    const isCustomColor = Boolean(
+        draft?.color &&
+            !EVENT_COLOR_SWATCHES.some(
+                (swatch) => swatch.hex === draft.color,
+            ),
     );
 
     return (
@@ -881,8 +904,15 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                         7,
                                         GUTTER_WIDTH,
                                     ),
+                                    ...eventBlockStyle(
+                                        resolveEventColor(
+                                            item.event,
+                                            calendars,
+                                        ),
+                                        fillAlpha,
+                                    ),
                                 }}
-                                className="absolute z-10 truncate rounded-md border border-pin-todo/40 bg-pin-todo/70 px-1.5 py-0.5 text-left text-[10px] font-medium text-ink shadow-sm hover:cursor-pointer hover:bg-pin-todo/80"
+                                className="absolute z-10 truncate rounded-md border px-1.5 py-0.5 text-left text-[10px] font-medium shadow-sm hover:cursor-pointer hover:brightness-95"
                             >
                                 {item.event.title}
                             </button>
@@ -1060,7 +1090,7 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                                             event,
                                                         );
                                                     }}
-                                                    className={`absolute flex flex-col items-start justify-start overflow-hidden border border-pin-todo/40 bg-pin-todo/70 px-2 text-left text-xs text-ink shadow-sm hover:cursor-pointer hover:bg-pin-todo/8 ${
+                                                    className={`absolute flex flex-col items-start justify-start overflow-hidden border px-2 text-left text-xs shadow-sm hover:cursor-pointer hover:brightness-95 ${
                                                         isMinHeight
                                                             ? "py-0"
                                                             : "py-1"
@@ -1079,6 +1109,13 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                                         left,
                                                         width,
                                                         zIndex,
+                                                        ...eventBlockStyle(
+                                                            resolveEventColor(
+                                                                event,
+                                                                calendars,
+                                                            ),
+                                                            fillAlpha,
+                                                        ),
                                                     }}
                                                 >
                                                     <p
@@ -1284,6 +1321,113 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                     All day
                                 </span>
                             </label>
+                            <div className="space-y-1">
+                                <span className="text-xs font-semibold text-ink-soft">
+                                    Color
+                                </span>
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                    {/* Null is its own swatch rather than a
+                                        separate control -- "inherit the
+                                        calendar's color" is a colour choice
+                                        from the user's side, so it belongs in
+                                        the same row as the rest. */}
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            setDraft({ ...draft, color: null })
+                                        }
+                                        title="Use the calendar's color"
+                                        aria-label="Use the calendar's color"
+                                        aria-pressed={draft.color === null}
+                                        style={{
+                                            backgroundColor: resolveEventColor(
+                                                { ...draft, color: null },
+                                                calendars,
+                                            ),
+                                        }}
+                                        className={`flex h-6 w-6 items-center justify-center rounded-full border text-[9px] font-bold hover:cursor-pointer ${
+                                            draft.color === null
+                                                ? "border-ink ring-2 ring-ink/30"
+                                                : "border-paper-edge"
+                                        }`}
+                                    >
+                                        A
+                                    </button>
+                                    {EVENT_COLOR_SWATCHES.map((swatch) => (
+                                        <button
+                                            key={swatch.hex}
+                                            type="button"
+                                            onClick={() =>
+                                                setDraft({
+                                                    ...draft,
+                                                    color: swatch.hex,
+                                                })
+                                            }
+                                            title={swatch.name}
+                                            aria-label={swatch.name}
+                                            aria-pressed={
+                                                draft.color === swatch.hex
+                                            }
+                                            style={{
+                                                backgroundColor: swatch.hex,
+                                            }}
+                                            className={`h-6 w-6 rounded-full border hover:cursor-pointer ${
+                                                draft.color === swatch.hex
+                                                    ? "border-ink ring-2 ring-ink/30"
+                                                    : "border-paper-edge"
+                                            }`}
+                                        />
+                                    ))}
+                                    {/* Anything outside the eleven presets.
+                                        The color input sits invisibly on top
+                                        of the swatch at full size, so clicking
+                                        the swatch *is* clicking the input --
+                                        more reliable across browsers than a
+                                        hidden input driven by a label, and it
+                                        inherits the fieldset's disabled state
+                                        for a read-only calendar like the
+                                        buttons above do. */}
+                                    <span
+                                        title="Custom color"
+                                        className={`relative h-6 w-6 shrink-0 overflow-hidden rounded-full border ${
+                                            isCustomColor
+                                                ? "border-ink ring-2 ring-ink/30"
+                                                : "border-paper-edge"
+                                        }`}
+                                        style={
+                                            isCustomColor
+                                                ? {
+                                                      backgroundColor:
+                                                          draft.color ??
+                                                          undefined,
+                                                  }
+                                                : {
+                                                      backgroundImage:
+                                                          "conic-gradient(#dc2127, #fbd75b, #51b749, #46d6db, #5484ed, #dbadff, #dc2127)",
+                                                  }
+                                        }
+                                    >
+                                        <input
+                                            type="color"
+                                            aria-label="Custom color"
+                                            value={
+                                                draft.color ??
+                                                resolveEventColor(
+                                                    draft,
+                                                    calendars,
+                                                )
+                                            }
+                                            onChange={(event) =>
+                                                setDraft({
+                                                    ...draft,
+                                                    color: event.target.value,
+                                                })
+                                            }
+                                            className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                                        />
+                                    </span>
+                                </div>
+                            </div>
                             {!draft.occurrenceEdit &&
                                 (() => {
                                 const repeatLabels = describeRepeatPresets(
@@ -1745,6 +1889,22 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                                 className="shrink-0"
                                             />
                                             {calendar.name}
+                                            {/* The color this event is
+                                                actually drawn in, so the
+                                                preview says which calendar it
+                                                came from and what the block on
+                                                the grid belongs to. */}
+                                            <span
+                                                aria-hidden
+                                                style={{
+                                                    backgroundColor:
+                                                        resolveEventColor(
+                                                            previewEvent,
+                                                            calendars,
+                                                        ),
+                                                }}
+                                                className="ml-0.5 h-2.5 w-2.5 shrink-0 rounded-full"
+                                            />
                                         </p>
                                     )}
                                     {previewEvent.location && (

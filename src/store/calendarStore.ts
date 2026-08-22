@@ -37,6 +37,8 @@ export const DEFAULT_CALENDAR_SETTINGS: CalendarSettings = {
     timeFormat: "12h",
     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
     defaultEventDuration: 60,
+    syncEventColors: false,
+    opaqueEvents: false,
 };
 
 interface CalendarEventRow {
@@ -48,6 +50,7 @@ interface CalendarEventRow {
     starts_at: string;
     ends_at: string;
     all_day: boolean;
+    color: string | null;
     source: string;
     external_id: string | null;
     recurrence_rule: string | null;
@@ -58,7 +61,7 @@ interface CalendarEventRow {
 }
 
 const EVENT_COLUMNS =
-    "id, calendar_id, title, description, location, starts_at, ends_at, all_day, source, external_id, recurrence_rule, dirty, event_time_zone, updated_at, external_raw";
+    "id, calendar_id, title, description, location, starts_at, ends_at, all_day, color, source, external_id, recurrence_rule, dirty, event_time_zone, updated_at, external_raw";
 
 interface CalendarRow {
     id: string;
@@ -309,6 +312,7 @@ function rowToEvent(row: CalendarEventRow): CalendarEvent {
         startsAt: row.starts_at,
         endsAt: row.ends_at,
         allDay: row.all_day,
+        color: row.color,
         source: row.source as CalendarEventSource,
         externalId: row.external_id,
         recurrenceRule: row.recurrence_rule,
@@ -343,7 +347,7 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
             supabase
                 .from("user_preferences")
                 .select(
-                    "week_start, date_format, time_format, time_zone, default_event_duration",
+                    "week_start, date_format, time_format, time_zone, default_event_duration, sync_event_colors, opaque_events",
                 )
                 .eq("user_id", userId)
                 .single(),
@@ -385,6 +389,12 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
                 defaultEventDuration:
                     data.default_event_duration ??
                     DEFAULT_CALENDAR_SETTINGS.defaultEventDuration,
+                syncEventColors:
+                    data.sync_event_colors ??
+                    DEFAULT_CALENDAR_SETTINGS.syncEventColors,
+                opaqueEvents:
+                    data.opaque_events ??
+                    DEFAULT_CALENDAR_SETTINGS.opaqueEvents,
             },
             settingsLoading: false,
         });
@@ -680,6 +690,8 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
                 time_format: settings.timeFormat,
                 time_zone: settings.timeZone,
                 default_event_duration: settings.defaultEventDuration,
+                sync_event_colors: settings.syncEventColors,
+                opaque_events: settings.opaqueEvents,
             })
             .eq("user_id", userId);
 
@@ -718,6 +730,7 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
                 all_day: event.allDay ?? false,
                 source: event.source ?? "local",
                 external_id: event.externalId ?? null,
+                color: event.color,
                 recurrence_rule: event.recurrenceRule,
                 // A freshly created event has never been pushed anywhere,
                 // regardless of what (if anything) the caller passed.
@@ -768,6 +781,7 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
                 location: event.location,
                 starts_at: event.startsAt,
                 ends_at: event.endsAt,
+                color: event.color,
                 recurrence_rule: event.recurrenceRule,
                 dirty: true,
                 event_time_zone: event.eventTimeZone ?? null,

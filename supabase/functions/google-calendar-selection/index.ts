@@ -158,6 +158,9 @@ Deno.serve(async (req) => {
                     name: calendar.summary,
                     is_primary: false,
                     external_calendar_id: calendar.id,
+                    // Every event on this calendar falls back to its color
+                    // unless it carries one of its own.
+                    color: calendar.backgroundColor ?? null,
                     is_writable:
                         calendar.accessRole === "owner" ||
                         calendar.accessRole === "writer",

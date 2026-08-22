@@ -7,6 +7,14 @@ import {
 } from "react";
 import { useCalendarStore } from "../../store/calendarStore";
 import {
+    TRANSPARENT_CARD_ALPHA,
+    TRANSPARENT_FILL_ALPHA,
+    eventBlockStyle,
+    readableTextColor,
+    resolveEventColor,
+    withAlpha,
+} from "../../lib/eventColors";
+import {
     DAY_COLUMN_MIN_WIDTH,
     addDays,
     allDayBarLeft,
@@ -51,6 +59,7 @@ export const CalendarWidget = forwardRef<
     CalendarWidgetProps
 >(function CalendarWidget({ onOpenCalendar, onTodayVisibleChange }, ref) {
     const events = useCalendarStore((s) => s.events);
+    const calendars = useCalendarStore((s) => s.calendars);
     const exceptions = useCalendarStore((s) => s.exceptions);
     const settings = useCalendarStore((s) => s.settings);
     const loadEvents = useCalendarStore((s) => s.loadEvents);
@@ -134,6 +143,9 @@ export const CalendarWidget = forwardRef<
     // Same all-day layout system as the full Calendar page (lib/calendar.ts):
     // continuous multi-day bars, always shown and prioritized over single-day
     // ones, with per-day "+N more"/"Collapse" truncation when a day has too many.
+    const fillAlpha = settings.opaqueEvents ? 1 : TRANSPARENT_FILL_ALPHA;
+    const cardAlpha = settings.opaqueEvents ? 1 : TRANSPARENT_CARD_ALPHA;
+
     const allDayLayout = layoutAllDayEvents(
         visibleEvents.filter((event) => event.allDay),
         days,
@@ -253,8 +265,12 @@ export const CalendarWidget = forwardRef<
                                 item.endCol,
                                 dayCount,
                             ),
+                            ...eventBlockStyle(
+                                resolveEventColor(item.event, calendars),
+                                fillAlpha,
+                            ),
                         }}
-                        className="absolute z-10 truncate rounded-md border border-pin-todo/40 bg-pin-todo/70 px-1.5 py-0.5 text-left text-[10px] font-medium text-ink shadow-sm"
+                        className="absolute z-10 truncate rounded-md border px-1.5 py-0.5 text-left text-[10px] font-medium shadow-sm"
                     >
                         {item.event.title}
                     </div>
@@ -303,12 +319,32 @@ export const CalendarWidget = forwardRef<
                             {dayEvents.slice(0, 5).map((event) => (
                                 <div
                                     key={event.id}
-                                    className="rounded-md bg-pin-todo/25 px-1.5 py-1 text-[10px] leading-tight text-ink"
+                                    style={{
+                                        backgroundColor: withAlpha(
+                                            resolveEventColor(
+                                                event,
+                                                calendars,
+                                            ),
+                                            cardAlpha,
+                                        ),
+                                        color: readableTextColor(
+                                            resolveEventColor(
+                                                event,
+                                                calendars,
+                                            ),
+                                            cardAlpha,
+                                        ),
+                                    }}
+                                    className="rounded-md px-1.5 py-1 text-[10px] leading-tight"
                                 >
                                     <p className="truncate font-semibold">
                                         {event.title}
                                     </p>
-                                    <p className="truncate text-ink-soft">
+                                    {/* Inherits the computed text color at
+                                        reduced strength -- a fixed
+                                        text-ink-soft would vanish on a solid
+                                        dark fill. */}
+                                    <p className="truncate opacity-75">
                                         {formatEventTimeRange(
                                             event.startsAt,
                                             event.endsAt,

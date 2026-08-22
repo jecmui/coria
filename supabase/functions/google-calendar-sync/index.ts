@@ -6,9 +6,15 @@ import {
     deleteEvent,
     ensureFreshAccessToken,
     insertEvent,
+    listAllCalendars,
+    listEventColors,
     listEventsPage,
     updateEvent,
 } from "../_shared/google.ts";
+import {
+    FALLBACK_EVENT_PALETTE,
+    type EventPalette,
+} from "../_shared/colors.ts";
 import {
     buildGoogleEventBody,
     buildInstanceId,
@@ -40,6 +46,9 @@ interface LocalCalendar {
     id: string;
     external_calendar_id: string;
     sync_token: string | null;
+    /** The calendar's color as Google last reported it -- events on it fall
+     *  back to this when they carry no color of their own. */
+    color: string | null;
     /** Whether Coria can actually write to the linked Google calendar --
      *  false for one added read-only through the "manage synced calendars"
      *  picker. Pulling still happens regardless; pushing is skipped
@@ -144,6 +153,7 @@ async function applyRemoteMaster(
         starts_at: remote.startsAt,
         ends_at: remote.endsAt,
         all_day: remote.allDay,
+        color: remote.color,
         recurrence_rule: remote.recurrenceRule,
         event_time_zone: remote.eventTimeZone,
         external_raw: remote.externalRaw,
@@ -254,12 +264,13 @@ async function pullCalendar(
     accessToken: string,
     userId: string,
     calendar: LocalCalendar,
+    palette: EventPalette,
 ): Promise<number> {
     const { items, syncToken } = await fetchRemoteEvents(
         accessToken,
         calendar,
     );
-    const mapped = items.map((item) => mapGoogleEvent(item));
+    const mapped = items.map((item) => mapGoogleEvent(item, palette));
 
     // Masters before exceptions, so a series and an override of it
     // arriving in the same batch are applied in an order where the
@@ -285,11 +296,14 @@ async function pushCalendar(
     accessToken: string,
     calendar: LocalCalendar,
     timeZone: string,
+    /** Null unless the user turned colour push-back on -- see
+     *  user_preferences.sync_event_colors. */
+    palette: EventPalette | null,
 ): Promise<number> {
     const { data: rows } = await admin
         .from("calendar_events")
         .select(
-            "id, external_id, deleted_at, title, description, location, starts_at, ends_at, all_day, recurrence_rule, event_time_zone, external_raw",
+            "id, external_id, deleted_at, title, description, location, starts_at, ends_at, all_day, color, recurrence_rule, event_time_zone, external_raw",
         )
         .eq("calendar_id", calendar.id)
         .eq("dirty", true);
@@ -314,7 +328,7 @@ async function pushCalendar(
             continue;
         }
 
-        const body = buildGoogleEventBody(row, timeZone);
+        const body = buildGoogleEventBody(row, timeZone, palette);
         if (row.external_id) {
             const updated = await updateEvent(
                 accessToken,
@@ -412,10 +426,16 @@ async function pushExceptions(
                     all_day: row.all_day ?? master.all_day,
                     // An occurrence never carries a rule of its own.
                     recurrence_rule: null,
+                    // Coria has no per-occurrence color, so there's nothing
+                    // to push -- passing a null palette below leaves the
+                    // occurrence's own colorId exactly as Google had it,
+                    // rather than clearing it to match this null.
+                    color: null,
                     event_time_zone: null,
                     external_raw: row.external_raw,
                 },
                 timeZone,
+                null,
             ),
         );
         await admin
@@ -465,29 +485,76 @@ Deno.serve(async (req) => {
         const accessToken = await ensureFreshAccessToken(admin, connection.id);
         const { data: preferences } = await admin
             .from("user_preferences")
-            .select("time_zone")
+            .select("time_zone, sync_event_colors")
             .eq("user_id", userId)
             .maybeSingle();
         const timeZone = preferences?.time_zone ?? "UTC";
+
+        // Google serves the eleven event colors separately from the events
+        // that reference them, so one lookup per sync pass resolves every
+        // colorId that turns up below. A failure here isn't worth losing the
+        // whole sync over -- the long-stable built-in palette stands in.
+        let palette: EventPalette;
+        try {
+            palette = await listEventColors(accessToken);
+        } catch (error) {
+            console.warn("Couldn't load Google's color palette:", error);
+            palette = FALLBACK_EVENT_PALETTE;
+        }
+        // Push-back is opt-in: without it, a local color stays local and
+        // Google's own colorId is left untouched on every push.
+        const pushPalette = preferences?.sync_event_colors ? palette : null;
+
+        // A calendar's own color is Google's to set (Coria offers no picker
+        // for it), so it's re-read every pass rather than only when the
+        // calendar is first linked -- that way recoloring a calendar in
+        // Google shows up here, and calendars linked before colors existed
+        // pick one up without needing to be re-added.
+        const calendarColors = new Map<string, string>();
+        try {
+            for (const entry of await listAllCalendars(accessToken)) {
+                if (entry.backgroundColor) {
+                    calendarColors.set(entry.id, entry.backgroundColor);
+                }
+            }
+        } catch (error) {
+            console.warn("Couldn't load Google's calendar colors:", error);
+        }
 
         // Only calendars actually linked to a Google calendar take part --
         // a purely local one has nothing to sync against.
         const { data: calendars } = await admin
             .from("calendars")
-            .select("id, external_calendar_id, sync_token, is_writable")
+            .select("id, external_calendar_id, sync_token, is_writable, color")
             .eq("user_id", userId)
             .not("external_calendar_id", "is", null);
 
         let pulled = 0;
         let pushed = 0;
         for (const calendar of (calendars ?? []) as LocalCalendar[]) {
-            pulled += await pullCalendar(admin, accessToken, userId, calendar);
+            const remoteColor = calendarColors.get(
+                calendar.external_calendar_id,
+            );
+            if (remoteColor && remoteColor !== calendar.color) {
+                await admin
+                    .from("calendars")
+                    .update({ color: remoteColor })
+                    .eq("id", calendar.id);
+            }
+            pulled += await pullCalendar(
+                admin,
+                accessToken,
+                userId,
+                calendar,
+                palette,
+            );
             if (calendar.is_writable) {
                 pushed += await pushCalendar(
                     admin,
                     accessToken,
                     calendar,
                     timeZone,
+                    pushPalette,
                 );
             }
         }
