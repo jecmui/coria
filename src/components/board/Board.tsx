@@ -8,8 +8,9 @@ import { WidgetShell } from "./WidgetShell";
 import { TodoWidget } from "../widgets/TodoWidget";
 import { NoteWidget } from "../widgets/NoteWidget";
 import { TimerWidget } from "../widgets/TimerWidget";
-import type { ImageData, NoteData, TimerData } from "../../types";
+import type { ImageData, NoteData, NowData, TimerData } from "../../types";
 import { ImageWidget } from "../widgets/ImageWidget";
+import { NowWidget, NOW_WIDGET_HEIGHT } from "../widgets/NowWidget";
 import {
     CalendarWidget,
     type CalendarWidgetHandle,
@@ -21,6 +22,7 @@ const WIDGET_TITLES: Record<string, string> = {
     timer: "Pomodoro",
     image: "Image",
     calendar: "Calendar",
+    now: "Currently working on...",
 };
 
 const WIDGET_MIN_HEIGHTS: Record<string, number> = {
@@ -29,6 +31,7 @@ const WIDGET_MIN_HEIGHTS: Record<string, number> = {
     timer: 200,
     image: 160,
     calendar: 160,
+    now: NOW_WIDGET_HEIGHT,
 };
 
 // Matches the board-texture dot spacing in index.css, so snapped widgets
@@ -161,6 +164,8 @@ export function Board({ onOpenFullList, onOpenCalendar }: BoardProps) {
         if (type === "note")
             return <NoteWidget widgetId={widgetId} data={data as NoteData} />;
         if (type === "timer") return <TimerWidget data={data as TimerData} />;
+        if (type === "now")
+            return <NowWidget widgetId={widgetId} data={data as NowData} />;
         if (type === "image")
             return <ImageWidget widgetId={widgetId} data={data as ImageData} />;
         if (type === "calendar")
@@ -250,7 +255,12 @@ export function Board({ onOpenFullList, onOpenCalendar }: BoardProps) {
                     key={widget.id}
                     size={{
                         width: widget.layout.width,
-                        height: widget.layout.height,
+                        // The Now widget ignores whatever height is stored --
+                        // it's a single row of controls, so it's pinned.
+                        height:
+                            widget.type === "now"
+                                ? NOW_WIDGET_HEIGHT
+                                : widget.layout.height,
                     }}
                     position={{ x: widget.layout.x, y: widget.layout.y }}
                     minWidth={200}
@@ -258,6 +268,11 @@ export function Board({ onOpenFullList, onOpenCalendar }: BoardProps) {
                     dragGrid={snapToGrid ? [GRID_SIZE, GRID_SIZE] : undefined}
                     resizeGrid={
                         snapToGrid ? [GRID_SIZE, GRID_SIZE] : undefined
+                    }
+                    enableResizing={
+                        widget.type === "now"
+                            ? { left: true, right: true }
+                            : undefined
                     }
                     dragHandleClassName="widget-drag-handle"
                     style={{ zIndex: widget.zIndex }}

@@ -10,6 +10,7 @@ type AddOption = {
 };
 
 const OPTIONS: AddOption[] = [
+    { type: "now", label: "Now", color: "var(--color-pin-timer)" },
     { type: "todo", label: "Today", color: "var(--color-pin-todo)" },
     { type: "note", label: "Note", color: "var(--color-pin-note)" },
     { type: "timer", label: "Pomodoro", color: "var(--color-pin-timer)" },

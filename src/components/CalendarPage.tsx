@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import { RRule, Weekday } from "rrule";
 import { useCalendarStore } from "../store/calendarStore";
 import { useModalDismiss } from "../lib/useModalDismiss";
@@ -42,6 +43,7 @@ import {
     sameCalendarDay,
     timeInputValue,
     weekdayIndexOfDateValue,
+    zonedDateTimeToUtcIso,
 } from "../lib/calendar";
 
 interface CalendarPageProps {
@@ -96,7 +98,10 @@ const ORDINAL_WORDS: Record<number, string> = {
     4: "fourth",
     [-1]: "last",
 };
-const CUSTOM_UNIT_LABELS: Record<CustomRepeatUnit, { singular: string; plural: string }> = {
+const CUSTOM_UNIT_LABELS: Record<
+    CustomRepeatUnit,
+    { singular: string; plural: string }
+> = {
     day: { singular: "day", plural: "days" },
     week: { singular: "week", plural: "weeks" },
     month: { singular: "month", plural: "months" },
@@ -188,7 +193,11 @@ function repeatStateFromRule(
             ? byweekday[0].n
             : undefined;
 
-    if (interval === 1 && parsed.freq === RRule.DAILY && byweekday.length === 0) {
+    if (
+        interval === 1 &&
+        parsed.freq === RRule.DAILY &&
+        byweekday.length === 0
+    ) {
         state.repeatPreset = "daily";
     } else if (
         interval === 1 &&
@@ -263,6 +272,70 @@ function draftDatesFromEvent(
     };
 }
 
+/** A native date field that React writes to exactly once, at mount.
+ *
+ *  These inputs are segmented, and the browser reports an empty value for
+ *  *any* incomplete edit -- so clearing a single segment re-renders the field
+ *  with an empty value, which React then writes back to the DOM node. Firefox
+ *  treats that write as "reset the widget" and blanks every segment, which is
+ *  the whole field appearing to clear on one Backspace; Chromium happens to
+ *  ignore it, which is why this only reproduces in some browsers. Pinning the
+ *  value React knows about to whatever it was at mount means React never
+ *  writes to the node again, leaving each browser's own per-segment Backspace
+ *  intact. The draft still follows every edit through onValueChange.
+ *
+ *  Safe because nothing outside these fields changes the draft's dates while
+ *  the dialog is open. The All day toggle does swap date-only for
+ *  date-and-time, so the two are given different keys where they're used --
+ *  that remounts the field and re-reads the draft, rather than pinning a
+ *  value from the wrong shape. */
+function SegmentedDateInput({
+    type,
+    initialValue,
+    onValueChange,
+}: {
+    type: "date" | "datetime-local";
+    initialValue: string;
+    onValueChange: (value: string) => void;
+}) {
+    const [mountValue] = useState(initialValue);
+    return (
+        <input
+            type={type}
+            defaultValue={mountValue}
+            onChange={(event) => onValueChange(event.target.value)}
+            className="w-full rounded-xl border border-paper-edge bg-board/40 px-3 py-2 text-sm outline-none"
+        />
+    );
+}
+
+/** Joins a draft's date and time into the one string a `datetime-local`
+ *  wants, or "" when either half is missing -- which is the case mid-edit,
+ *  since such an input reports an empty value for anything incomplete.
+ *  Without the guard the halves recombine into "<date>Tundefined", which no
+ *  browser can parse. */
+function dateTimeInputValue(date: string, time: string) {
+    return date && time ? `${date}T${time}` : "";
+}
+
+/** The "9 - 9:30AM" label for a minutes-from-midnight range on `day`, so the
+ *  drag preview reads the same way a saved event's own block does. */
+function formatMinutesRange(
+    day: Date,
+    from: number,
+    to: number,
+    settings: CalendarSettings,
+) {
+    const iso = (minutes: number) =>
+        zonedDateTimeToUtcIso(
+            day,
+            Math.floor(minutes / 60),
+            minutes % 60,
+            settings.timeZone,
+        );
+    return formatEventTimeRange(iso(from), iso(to), settings);
+}
+
 /** Human-readable labels for the repeat picker's fixed presets, derived
  *  live from the draft's start date so e.g. "Monthly" reads as "Monthly on
  *  the third Tuesday" once a start date is chosen. */
@@ -310,6 +383,22 @@ const ALL_DAY_OVERFLOW_THRESHOLD = 3;
 /** How many of an overflowing day's events stay visible before truncating. */
 const ALL_DAY_VISIBLE_WHEN_COLLAPSED = 2;
 /** Line height (px) of a timed event's title text (text-xs). */
+/** Click-drag on the grid snaps to quarter hours -- fine enough to place a
+ *  :15 or :45 start, coarse enough that a slightly shaky drag still lands on
+ *  a round time. */
+const DRAG_SNAP_MINUTES = 15;
+
+/** A drag has to cross at least one snap step before it counts as a range;
+ *  anything less is treated as a plain click, which opens the default-length
+ *  event instead of a zero-minute one. */
+interface DragCreate {
+    day: Date;
+    /** Where the pointer went down, in minutes from midnight. */
+    anchorMinutes: number;
+    /** Where it is now -- may be *above* the anchor when dragging upward. */
+    currentMinutes: number;
+}
+
 const EVENT_TITLE_LINE_HEIGHT = 16;
 /** Vertical space (px) inside a timed event block that isn't available to
  *  its title -- the py-1 padding (8px) plus the 1px border on each edge. */
@@ -356,9 +445,7 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
     // opened -- that choice decides both how the draft loads and what its
     // Delete button does, so it has to happen before editEvent/editOccurrence,
     // not inside the already-open modal.
-    const [scopeChoice, setScopeChoice] = useState<CalendarEvent | null>(
-        null,
-    );
+    const [scopeChoice, setScopeChoice] = useState<CalendarEvent | null>(null);
     // Clicking any event opens this read-only preview first, rather than
     // jumping straight to the edit form -- its own Edit button is what
     // triggers the scope-choice-then-editEvent flow below.
@@ -367,9 +454,7 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
     );
     // Escape and clicking outside close whichever of these three is
     // currently open, same as their own Cancel/×/Close buttons already do.
-    const dismissDraft = useModalDismiss(draft !== null, () =>
-        setDraft(null),
-    );
+    const dismissDraft = useModalDismiss(draft !== null, () => setDraft(null));
     const dismissScopeChoice = useModalDismiss(scopeChoice !== null, () =>
         setScopeChoice(null),
     );
@@ -429,6 +514,25 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
         };
     }
 
+    // Null except while the pointer is down on the grid. Mirrored into a ref
+    // so the window-level mousemove/mouseup handlers below can read the
+    // latest drag without being torn down and re-attached on every move.
+    const [dragCreate, setDragCreate] = useState<DragCreate | null>(null);
+    const dragCreateRef = useRef<DragCreate | null>(null);
+    dragCreateRef.current = dragCreate;
+    /** The column the drag started in, so pointer positions stay measured
+     *  against it even once the pointer leaves it. */
+    const dragColumnRef = useRef<HTMLDivElement | null>(null);
+
+    /** Where a pointer sits within a day column, as minutes from midnight,
+     *  snapped and clamped to the day. */
+    function pointerMinutes(clientY: number, column: HTMLElement) {
+        const offsetY = clientY - column.getBoundingClientRect().top;
+        const raw = (offsetY / HOUR_HEIGHT) * 60;
+        const snapped = Math.round(raw / DRAG_SNAP_MINUTES) * DRAG_SNAP_MINUTES;
+        return Math.min(24 * 60, Math.max(0, snapped));
+    }
+
     function openNewEvent(day: Date, minutes: number, endMinutes?: number) {
         setDraft(
             draftFromRange(
@@ -438,6 +542,80 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
             ),
         );
     }
+
+    function startDragCreate(
+        day: Date,
+        mouseEvent: ReactMouseEvent<HTMLDivElement>,
+    ) {
+        // Left button only, and never when the press landed on an event
+        // block (those stop propagation themselves) or any other control.
+        if (mouseEvent.button !== 0) return;
+        // Stops the drag turning into a text selection across the grid.
+        mouseEvent.preventDefault();
+        const column = mouseEvent.currentTarget;
+        dragColumnRef.current = column;
+        const minutes = pointerMinutes(mouseEvent.clientY, column);
+        setDragCreate({
+            day,
+            anchorMinutes: minutes,
+            currentMinutes: minutes,
+        });
+    }
+
+    // Tracked on the window rather than the column so the drag survives the
+    // pointer leaving the column -- releasing anywhere still creates the
+    // event, and dragging past the grid's edge clamps instead of dropping.
+    useEffect(() => {
+        if (!dragCreate) return;
+
+        function handleMove(event: MouseEvent) {
+            const column = dragColumnRef.current;
+            if (!column) return;
+            const minutes = pointerMinutes(event.clientY, column);
+            setDragCreate((previous) =>
+                previous && previous.currentMinutes !== minutes
+                    ? { ...previous, currentMinutes: minutes }
+                    : previous,
+            );
+        }
+
+        function handleUp() {
+            const drag = dragCreateRef.current;
+            setDragCreate(null);
+            dragColumnRef.current = null;
+            if (!drag) return;
+            const start = Math.min(drag.anchorMinutes, drag.currentMinutes);
+            const end = Math.max(drag.anchorMinutes, drag.currentMinutes);
+            // A press that never crossed a snap step is a click, not a
+            // range -- open the usual default-length event at that time.
+            if (end - start < DRAG_SNAP_MINUTES) {
+                openNewEvent(drag.day, start);
+            } else {
+                openNewEvent(drag.day, start, end);
+            }
+        }
+
+        // Esc abandons a drag in progress, matching how every modal here
+        // treats it -- without this the only way out is to complete it and
+        // then cancel the dialog.
+        function handleKeyDown(event: KeyboardEvent) {
+            if (event.key !== "Escape") return;
+            setDragCreate(null);
+            dragColumnRef.current = null;
+        }
+
+        window.addEventListener("mousemove", handleMove);
+        window.addEventListener("mouseup", handleUp);
+        window.addEventListener("keydown", handleKeyDown);
+        return () => {
+            window.removeEventListener("mousemove", handleMove);
+            window.removeEventListener("mouseup", handleUp);
+            window.removeEventListener("keydown", handleKeyDown);
+        };
+        // Only the transition into and out of dragging should re-subscribe;
+        // the handlers read the live drag through dragCreateRef.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [dragCreate !== null]);
 
     function handleAddEvent() {
         const now = new Date();
@@ -474,10 +652,7 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
             ...repeatStateFromRule(
                 event.recurrenceRule,
                 event.startsAt,
-                eventDateZone(
-                    event,
-                    event.eventTimeZone ?? settings.timeZone,
-                ),
+                eventDateZone(event, event.eventTimeZone ?? settings.timeZone),
             ),
         });
     }
@@ -643,8 +818,7 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
 
     async function handleDeleteEvent() {
         if (draft?.occurrenceEdit) {
-            const { masterEventId, originalStartTime } =
-                draft.occurrenceEdit;
+            const { masterEventId, originalStartTime } = draft.occurrenceEdit;
             if (await cancelEventOccurrence(masterEventId, originalStartTime))
                 setDraft(null);
             return;
@@ -743,17 +917,15 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
     // otherwise let the user fill out changes with no way to keep them.
     const readOnlyCalendar = Boolean(
         draft?.calendarId &&
-            calendars.find((calendar) => calendar.id === draft.calendarId)
-                ?.isWritable === false,
+        calendars.find((calendar) => calendar.id === draft.calendarId)
+            ?.isWritable === false,
     );
     const fillAlpha = settings.opaqueEvents ? 1 : TRANSPARENT_FILL_ALPHA;
     // A color that isn't one of the presets -- either picked here, or pulled
     // from a Google calendar whose own color isn't in the event palette.
     const isCustomColor = Boolean(
         draft?.color &&
-            !EVENT_COLOR_SWATCHES.some(
-                (swatch) => swatch.hex === draft.color,
-            ),
+        !EVENT_COLOR_SWATCHES.some((swatch) => swatch.hex === draft.color),
     );
 
     return (
@@ -990,7 +1162,14 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                             return (
                                 <div
                                     key={day.toISOString()}
-                                    className="relative border-r border-paper-edge bg-paper/40"
+                                    onMouseDown={(mouseEvent) =>
+                                        startDragCreate(day, mouseEvent)
+                                    }
+                                    className={`relative border-r border-paper-edge bg-paper/40 ${
+                                        dragCreate
+                                            ? "cursor-ns-resize select-none"
+                                            : "cursor-cell"
+                                    }`}
                                     style={{ height: 24 * HOUR_HEIGHT }}
                                 >
                                     {Array.from({ length: 24 }, (_, hour) => (
@@ -1077,18 +1256,12 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                                 <button
                                                     key={event.id}
                                                     type="button"
-                                                    onMouseDown={(
-                                                        mouseEvent,
-                                                    ) =>
+                                                    onMouseDown={(mouseEvent) =>
                                                         mouseEvent.stopPropagation()
                                                     }
-                                                    onClick={(
-                                                        mouseEvent,
-                                                    ) => {
+                                                    onClick={(mouseEvent) => {
                                                         mouseEvent.stopPropagation();
-                                                        handleEventClick(
-                                                            event,
-                                                        );
+                                                        handleEventClick(event);
                                                     }}
                                                     className={`absolute flex flex-col items-start justify-start overflow-hidden border px-2 text-left text-xs shadow-sm hover:cursor-pointer hover:brightness-95 ${
                                                         isMinHeight
@@ -1128,12 +1301,14 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                                             coveredByLaterEvent
                                                                 ? undefined
                                                                 : {
-                                                                      display: "-webkit-box",
+                                                                      display:
+                                                                          "-webkit-box",
                                                                       WebkitLineClamp:
                                                                           titleLines,
                                                                       WebkitBoxOrient:
                                                                           "vertical",
-                                                                      overflow: "hidden",
+                                                                      overflow:
+                                                                          "hidden",
                                                                   }
                                                         }
                                                     >
@@ -1164,6 +1339,68 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                             );
                                         },
                                     )}
+                                    {dragCreate &&
+                                        sameCalendarDay(
+                                            dragCreate.day,
+                                            day,
+                                            settings.timeZone,
+                                        ) &&
+                                        (() => {
+                                            const from = Math.min(
+                                                dragCreate.anchorMinutes,
+                                                dragCreate.currentMinutes,
+                                            );
+                                            const to = Math.max(
+                                                dragCreate.anchorMinutes,
+                                                dragCreate.currentMinutes,
+                                            );
+                                            // A press that hasn't moved yet
+                                            // previews the default length, so
+                                            // the block matches what letting
+                                            // go right now would create.
+                                            const isClick =
+                                                to - from < DRAG_SNAP_MINUTES;
+                                            const end = isClick
+                                                ? Math.min(
+                                                      24 * 60,
+                                                      from +
+                                                          settings.defaultEventDuration,
+                                                  )
+                                                : to;
+                                            const color = resolveEventColor(
+                                                { color: null },
+                                                calendars,
+                                            );
+                                            return (
+                                                <div
+                                                    className="pointer-events-none absolute z-40 overflow-hidden rounded-md border border-dashed px-2 py-0.5 text-[10px] font-semibold"
+                                                    style={{
+                                                        top:
+                                                            (from / 60) *
+                                                            HOUR_HEIGHT,
+                                                        height: Math.max(
+                                                            MIN_EVENT_HEIGHT,
+                                                            ((end - from) /
+                                                                60) *
+                                                                HOUR_HEIGHT,
+                                                        ),
+                                                        left: 4,
+                                                        right: 4,
+                                                        ...eventBlockStyle(
+                                                            color,
+                                                            fillAlpha,
+                                                        ),
+                                                    }}
+                                                >
+                                                    {formatMinutesRange(
+                                                        day,
+                                                        from,
+                                                        end,
+                                                        settings,
+                                                    )}
+                                                </div>
+                                            );
+                                        })()}
                                     {sameCalendarDay(
                                         day,
                                         now,
@@ -1208,8 +1445,8 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                         </div>
                         {readOnlyCalendar && (
                             <p className="mb-3 text-xs text-ink-soft">
-                                This calendar is view-only in Coria — you
-                                can't edit or delete its events.
+                                This calendar is view-only in Coria — you can't
+                                edit or delete its events.
                             </p>
                         )}
                         <fieldset
@@ -1238,34 +1475,34 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                         Start
                                     </span>
                                     {draft.allDay ? (
-                                        <input
+                                        <SegmentedDateInput
+                                            key="start-date"
                                             type="date"
-                                            value={draft.startDate}
-                                            onChange={(event) =>
+                                            initialValue={draft.startDate}
+                                            onValueChange={(value) =>
                                                 setDraft({
                                                     ...draft,
-                                                    startDate:
-                                                        event.target.value,
+                                                    startDate: value,
                                                 })
                                             }
-                                            className="w-full rounded-xl border border-paper-edge bg-board/40 px-3 py-2 text-sm outline-none"
                                         />
                                     ) : (
-                                        <input
+                                        <SegmentedDateInput
+                                            key="start-datetime"
                                             type="datetime-local"
-                                            value={`${draft.startDate}T${draft.startTime}`}
-                                            onChange={(event) => {
-                                                const [date, time] =
-                                                    event.target.value.split(
-                                                        "T",
-                                                    );
+                                            initialValue={dateTimeInputValue(
+                                                draft.startDate,
+                                                draft.startTime,
+                                            )}
+                                            onValueChange={(value) => {
+                                                const [date = "", time = ""] =
+                                                    value.split("T");
                                                 setDraft({
                                                     ...draft,
                                                     startDate: date,
                                                     startTime: time,
                                                 });
                                             }}
-                                            className="w-full rounded-xl border border-paper-edge bg-board/40 px-3 py-2 text-sm outline-none"
                                         />
                                     )}
                                 </label>
@@ -1274,33 +1511,34 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                         End
                                     </span>
                                     {draft.allDay ? (
-                                        <input
+                                        <SegmentedDateInput
+                                            key="end-date"
                                             type="date"
-                                            value={draft.endDate}
-                                            onChange={(event) =>
+                                            initialValue={draft.endDate}
+                                            onValueChange={(value) =>
                                                 setDraft({
                                                     ...draft,
-                                                    endDate: event.target.value,
+                                                    endDate: value,
                                                 })
                                             }
-                                            className="w-full rounded-xl border border-paper-edge bg-board/40 px-3 py-2 text-sm outline-none"
                                         />
                                     ) : (
-                                        <input
+                                        <SegmentedDateInput
+                                            key="end-datetime"
                                             type="datetime-local"
-                                            value={`${draft.endDate}T${draft.endTime}`}
-                                            onChange={(event) => {
-                                                const [date, time] =
-                                                    event.target.value.split(
-                                                        "T",
-                                                    );
+                                            initialValue={dateTimeInputValue(
+                                                draft.endDate,
+                                                draft.endTime,
+                                            )}
+                                            onValueChange={(value) => {
+                                                const [date = "", time = ""] =
+                                                    value.split("T");
                                                 setDraft({
                                                     ...draft,
                                                     endDate: date,
                                                     endTime: time,
                                                 });
                                             }}
-                                            className="w-full rounded-xl border border-paper-edge bg-board/40 px-3 py-2 text-sm outline-none"
                                         />
                                     )}
                                 </label>
@@ -1321,6 +1559,309 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                     All day
                                 </span>
                             </label>
+                            {!draft.occurrenceEdit &&
+                                (() => {
+                                    const repeatLabels = describeRepeatPresets(
+                                        draft.startDate,
+                                        settings,
+                                    );
+                                    return (
+                                        <>
+                                            <label className="block space-y-1">
+                                                <span className="text-xs font-semibold text-ink-soft">
+                                                    Repeat
+                                                </span>
+                                                <select
+                                                    value={draft.repeatPreset}
+                                                    onChange={(event) =>
+                                                        setDraft({
+                                                            ...draft,
+                                                            repeatPreset: event
+                                                                .target
+                                                                .value as RepeatPreset,
+                                                        })
+                                                    }
+                                                    className="w-full rounded-xl border border-paper-edge bg-board/40 px-3 py-2 text-sm outline-none"
+                                                >
+                                                    <option value="none">
+                                                        Does not repeat
+                                                    </option>
+                                                    <option value="daily">
+                                                        {repeatLabels.daily}
+                                                    </option>
+                                                    <option value="weekly">
+                                                        {repeatLabels.weekly}
+                                                    </option>
+                                                    <option value="monthlyNthWeekday">
+                                                        {
+                                                            repeatLabels.monthlyNthWeekday
+                                                        }
+                                                    </option>
+                                                    <option value="annually">
+                                                        {repeatLabels.annually}
+                                                    </option>
+                                                    <option value="weekdays">
+                                                        {repeatLabels.weekdays}
+                                                    </option>
+                                                    <option value="custom">
+                                                        Custom…
+                                                    </option>
+                                                </select>
+                                            </label>
+
+                                            {draft.repeatPreset ===
+                                                "custom" && (
+                                                <div className="space-y-2">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-xs font-semibold text-ink-soft">
+                                                            Repeat every
+                                                        </span>
+                                                        <input
+                                                            type="number"
+                                                            min={1}
+                                                            value={
+                                                                draft.customInterval
+                                                            }
+                                                            onChange={(event) =>
+                                                                setDraft({
+                                                                    ...draft,
+                                                                    customInterval:
+                                                                        Math.max(
+                                                                            1,
+                                                                            Number(
+                                                                                event
+                                                                                    .target
+                                                                                    .value,
+                                                                            ) ||
+                                                                                1,
+                                                                        ),
+                                                                })
+                                                            }
+                                                            className="w-16 rounded-xl border border-paper-edge bg-board/40 px-2 py-1.5 text-sm outline-none"
+                                                        />
+                                                        <select
+                                                            value={
+                                                                draft.customUnit
+                                                            }
+                                                            onChange={(event) =>
+                                                                setDraft({
+                                                                    ...draft,
+                                                                    customUnit:
+                                                                        event
+                                                                            .target
+                                                                            .value as CustomRepeatUnit,
+                                                                })
+                                                            }
+                                                            className="rounded-xl border border-paper-edge bg-board/40 px-2 py-1.5 text-sm outline-none"
+                                                        >
+                                                            {(
+                                                                Object.keys(
+                                                                    CUSTOM_UNIT_LABELS,
+                                                                ) as CustomRepeatUnit[]
+                                                            ).map((unit) => (
+                                                                <option
+                                                                    key={unit}
+                                                                    value={unit}
+                                                                >
+                                                                    {draft.customInterval ===
+                                                                    1
+                                                                        ? CUSTOM_UNIT_LABELS[
+                                                                              unit
+                                                                          ]
+                                                                              .singular
+                                                                        : CUSTOM_UNIT_LABELS[
+                                                                              unit
+                                                                          ]
+                                                                              .plural}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                    {draft.customUnit ===
+                                                        "week" && (
+                                                        <div className="flex gap-1">
+                                                            {WEEKDAY_TOGGLES.map(
+                                                                ({
+                                                                    index,
+                                                                    label,
+                                                                }) => {
+                                                                    const active =
+                                                                        draft.customWeekdays.includes(
+                                                                            index,
+                                                                        );
+                                                                    return (
+                                                                        <button
+                                                                            key={
+                                                                                index
+                                                                            }
+                                                                            type="button"
+                                                                            onClick={() =>
+                                                                                setDraft(
+                                                                                    {
+                                                                                        ...draft,
+                                                                                        customWeekdays:
+                                                                                            active
+                                                                                                ? draft.customWeekdays.filter(
+                                                                                                      (
+                                                                                                          d,
+                                                                                                      ) =>
+                                                                                                          d !==
+                                                                                                          index,
+                                                                                                  )
+                                                                                                : [
+                                                                                                      ...draft.customWeekdays,
+                                                                                                      index,
+                                                                                                  ],
+                                                                                    },
+                                                                                )
+                                                                            }
+                                                                            className={`h-7 w-7 rounded-full text-xs font-semibold hover:cursor-pointer ${
+                                                                                active
+                                                                                    ? "bg-pin-todo text-ink"
+                                                                                    : "border border-paper-edge text-ink-soft hover:bg-black/5"
+                                                                            }`}
+                                                                        >
+                                                                            {
+                                                                                label
+                                                                            }
+                                                                        </button>
+                                                                    );
+                                                                },
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            {draft.repeatPreset !== "none" && (
+                                                <div className="space-y-1.5">
+                                                    <span className="text-xs font-semibold text-ink-soft">
+                                                        Ends
+                                                    </span>
+                                                    <div className="flex flex-wrap items-center gap-3 text-xs text-ink">
+                                                        <label className="flex items-center gap-1.5">
+                                                            <input
+                                                                type="radio"
+                                                                checked={
+                                                                    draft.repeatEndMode ===
+                                                                    "never"
+                                                                }
+                                                                onChange={() =>
+                                                                    setDraft({
+                                                                        ...draft,
+                                                                        repeatEndMode:
+                                                                            "never",
+                                                                    })
+                                                                }
+                                                                className="accent-pin-todo"
+                                                            />
+                                                            Never
+                                                        </label>
+                                                        <label className="flex items-center gap-1.5">
+                                                            <input
+                                                                type="radio"
+                                                                checked={
+                                                                    draft.repeatEndMode ===
+                                                                    "onDate"
+                                                                }
+                                                                onChange={() =>
+                                                                    setDraft({
+                                                                        ...draft,
+                                                                        repeatEndMode:
+                                                                            "onDate",
+                                                                    })
+                                                                }
+                                                                className="accent-pin-todo"
+                                                            />
+                                                            On
+                                                            <input
+                                                                type="date"
+                                                                value={
+                                                                    draft.repeatEndDate
+                                                                }
+                                                                onChange={(
+                                                                    event,
+                                                                ) =>
+                                                                    setDraft({
+                                                                        ...draft,
+                                                                        repeatEndMode:
+                                                                            "onDate",
+                                                                        repeatEndDate:
+                                                                            event
+                                                                                .target
+                                                                                .value,
+                                                                    })
+                                                                }
+                                                                className="rounded-lg border border-paper-edge bg-board/40 px-2 py-1 text-xs outline-none"
+                                                            />
+                                                        </label>
+                                                        <label className="flex items-center gap-1.5">
+                                                            <input
+                                                                type="radio"
+                                                                checked={
+                                                                    draft.repeatEndMode ===
+                                                                    "afterCount"
+                                                                }
+                                                                onChange={() =>
+                                                                    setDraft({
+                                                                        ...draft,
+                                                                        repeatEndMode:
+                                                                            "afterCount",
+                                                                    })
+                                                                }
+                                                                className="accent-pin-todo"
+                                                            />
+                                                            After
+                                                            <input
+                                                                type="number"
+                                                                min={1}
+                                                                value={
+                                                                    draft.repeatCount
+                                                                }
+                                                                onChange={(
+                                                                    event,
+                                                                ) =>
+                                                                    setDraft({
+                                                                        ...draft,
+                                                                        repeatEndMode:
+                                                                            "afterCount",
+                                                                        repeatCount:
+                                                                            Math.max(
+                                                                                1,
+                                                                                Number(
+                                                                                    event
+                                                                                        .target
+                                                                                        .value,
+                                                                                ) ||
+                                                                                    1,
+                                                                            ),
+                                                                    })
+                                                                }
+                                                                className="w-14 rounded-lg border border-paper-edge bg-board/40 px-2 py-1 text-xs outline-none"
+                                                            />
+                                                            occurrences
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </>
+                                    );
+                                })()}
+                            <label className="block space-y-1">
+                                <span className="text-xs font-semibold text-ink-soft">
+                                    Location
+                                </span>
+                                <input
+                                    value={draft.location}
+                                    onChange={(event) =>
+                                        setDraft({
+                                            ...draft,
+                                            location: event.target.value,
+                                        })
+                                    }
+                                    className="w-full rounded-xl border border-paper-edge bg-board/40 px-3 py-2 text-sm outline-none"
+                                />
+                            </label>
                             <div className="space-y-1">
                                 <span className="text-xs font-semibold text-ink-soft">
                                     Color
@@ -1328,7 +1869,7 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                 <div className="flex flex-wrap items-center gap-1.5">
                                     {/* Null is its own swatch rather than a
                                         separate control -- "inherit the
-                                        calendar's color" is a colour choice
+                                        calendar's color" is a color choice
                                         from the user's side, so it belongs in
                                         the same row as the rest. */}
                                     <button
@@ -1428,291 +1969,6 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                     </span>
                                 </div>
                             </div>
-                            {!draft.occurrenceEdit &&
-                                (() => {
-                                const repeatLabels = describeRepeatPresets(
-                                    draft.startDate,
-                                    settings,
-                                );
-                                return (
-                                    <>
-                                        <label className="block space-y-1">
-                                            <span className="text-xs font-semibold text-ink-soft">
-                                                Repeat
-                                            </span>
-                                            <select
-                                                value={draft.repeatPreset}
-                                                onChange={(event) =>
-                                                    setDraft({
-                                                        ...draft,
-                                                        repeatPreset: event
-                                                            .target
-                                                            .value as RepeatPreset,
-                                                    })
-                                                }
-                                                className="w-full rounded-xl border border-paper-edge bg-board/40 px-3 py-2 text-sm outline-none"
-                                            >
-                                                <option value="none">
-                                                    Does not repeat
-                                                </option>
-                                                <option value="daily">
-                                                    {repeatLabels.daily}
-                                                </option>
-                                                <option value="weekly">
-                                                    {repeatLabels.weekly}
-                                                </option>
-                                                <option value="monthlyNthWeekday">
-                                                    {
-                                                        repeatLabels.monthlyNthWeekday
-                                                    }
-                                                </option>
-                                                <option value="annually">
-                                                    {repeatLabels.annually}
-                                                </option>
-                                                <option value="weekdays">
-                                                    {repeatLabels.weekdays}
-                                                </option>
-                                                <option value="custom">
-                                                    Custom…
-                                                </option>
-                                            </select>
-                                        </label>
-
-                                        {draft.repeatPreset === "custom" && (
-                                            <div className="space-y-2">
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-xs font-semibold text-ink-soft">
-                                                        Repeat every
-                                                    </span>
-                                                    <input
-                                                        type="number"
-                                                        min={1}
-                                                        value={
-                                                            draft.customInterval
-                                                        }
-                                                        onChange={(event) =>
-                                                            setDraft({
-                                                                ...draft,
-                                                                customInterval:
-                                                                    Math.max(
-                                                                        1,
-                                                                        Number(
-                                                                            event
-                                                                                .target
-                                                                                .value,
-                                                                        ) || 1,
-                                                                    ),
-                                                            })
-                                                        }
-                                                        className="w-16 rounded-xl border border-paper-edge bg-board/40 px-2 py-1.5 text-sm outline-none"
-                                                    />
-                                                    <select
-                                                        value={
-                                                            draft.customUnit
-                                                        }
-                                                        onChange={(event) =>
-                                                            setDraft({
-                                                                ...draft,
-                                                                customUnit: event
-                                                                    .target
-                                                                    .value as CustomRepeatUnit,
-                                                            })
-                                                        }
-                                                        className="rounded-xl border border-paper-edge bg-board/40 px-2 py-1.5 text-sm outline-none"
-                                                    >
-                                                        {(
-                                                            Object.keys(
-                                                                CUSTOM_UNIT_LABELS,
-                                                            ) as CustomRepeatUnit[]
-                                                        ).map((unit) => (
-                                                            <option
-                                                                key={unit}
-                                                                value={unit}
-                                                            >
-                                                                {draft.customInterval ===
-                                                                1
-                                                                    ? CUSTOM_UNIT_LABELS[
-                                                                          unit
-                                                                      ]
-                                                                          .singular
-                                                                    : CUSTOM_UNIT_LABELS[
-                                                                          unit
-                                                                      ]
-                                                                          .plural}
-                                                            </option>
-                                                        ))}
-                                                    </select>
-                                                </div>
-                                                {draft.customUnit ===
-                                                    "week" && (
-                                                    <div className="flex gap-1">
-                                                        {WEEKDAY_TOGGLES.map(
-                                                            ({
-                                                                index,
-                                                                label,
-                                                            }) => {
-                                                                const active =
-                                                                    draft.customWeekdays.includes(
-                                                                        index,
-                                                                    );
-                                                                return (
-                                                                    <button
-                                                                        key={
-                                                                            index
-                                                                        }
-                                                                        type="button"
-                                                                        onClick={() =>
-                                                                            setDraft(
-                                                                                {
-                                                                                    ...draft,
-                                                                                    customWeekdays:
-                                                                                        active
-                                                                                            ? draft.customWeekdays.filter(
-                                                                                                  (
-                                                                                                      d,
-                                                                                                  ) =>
-                                                                                                      d !==
-                                                                                                      index,
-                                                                                              )
-                                                                                            : [
-                                                                                                  ...draft.customWeekdays,
-                                                                                                  index,
-                                                                                              ],
-                                                                                },
-                                                                            )
-                                                                        }
-                                                                        className={`h-7 w-7 rounded-full text-xs font-semibold hover:cursor-pointer ${
-                                                                            active
-                                                                                ? "bg-pin-todo text-ink"
-                                                                                : "border border-paper-edge text-ink-soft hover:bg-black/5"
-                                                                        }`}
-                                                                    >
-                                                                        {
-                                                                            label
-                                                                        }
-                                                                    </button>
-                                                                );
-                                                            },
-                                                        )}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
-
-                                        {draft.repeatPreset !== "none" && (
-                                            <div className="space-y-1.5">
-                                                <span className="text-xs font-semibold text-ink-soft">
-                                                    Ends
-                                                </span>
-                                                <div className="flex flex-wrap items-center gap-3 text-xs text-ink">
-                                                    <label className="flex items-center gap-1.5">
-                                                        <input
-                                                            type="radio"
-                                                            checked={
-                                                                draft.repeatEndMode ===
-                                                                "never"
-                                                            }
-                                                            onChange={() =>
-                                                                setDraft({
-                                                                    ...draft,
-                                                                    repeatEndMode:
-                                                                        "never",
-                                                                })
-                                                            }
-                                                            className="accent-pin-todo"
-                                                        />
-                                                        Never
-                                                    </label>
-                                                    <label className="flex items-center gap-1.5">
-                                                        <input
-                                                            type="radio"
-                                                            checked={
-                                                                draft.repeatEndMode ===
-                                                                "onDate"
-                                                            }
-                                                            onChange={() =>
-                                                                setDraft({
-                                                                    ...draft,
-                                                                    repeatEndMode:
-                                                                        "onDate",
-                                                                })
-                                                            }
-                                                            className="accent-pin-todo"
-                                                        />
-                                                        On
-                                                        <input
-                                                            type="date"
-                                                            value={
-                                                                draft.repeatEndDate
-                                                            }
-                                                            onChange={(
-                                                                event,
-                                                            ) =>
-                                                                setDraft({
-                                                                    ...draft,
-                                                                    repeatEndMode:
-                                                                        "onDate",
-                                                                    repeatEndDate:
-                                                                        event
-                                                                            .target
-                                                                            .value,
-                                                                })
-                                                            }
-                                                            className="rounded-lg border border-paper-edge bg-board/40 px-2 py-1 text-xs outline-none"
-                                                        />
-                                                    </label>
-                                                    <label className="flex items-center gap-1.5">
-                                                        <input
-                                                            type="radio"
-                                                            checked={
-                                                                draft.repeatEndMode ===
-                                                                "afterCount"
-                                                            }
-                                                            onChange={() =>
-                                                                setDraft({
-                                                                    ...draft,
-                                                                    repeatEndMode:
-                                                                        "afterCount",
-                                                                })
-                                                            }
-                                                            className="accent-pin-todo"
-                                                        />
-                                                        After
-                                                        <input
-                                                            type="number"
-                                                            min={1}
-                                                            value={
-                                                                draft.repeatCount
-                                                            }
-                                                            onChange={(
-                                                                event,
-                                                            ) =>
-                                                                setDraft({
-                                                                    ...draft,
-                                                                    repeatEndMode:
-                                                                        "afterCount",
-                                                                    repeatCount:
-                                                                        Math.max(
-                                                                            1,
-                                                                            Number(
-                                                                                event
-                                                                                    .target
-                                                                                    .value,
-                                                                            ) ||
-                                                                                1,
-                                                                        ),
-                                                                })
-                                                            }
-                                                            className="w-14 rounded-lg border border-paper-edge bg-board/40 px-2 py-1 text-xs outline-none"
-                                                        />
-                                                        occurrences
-                                                    </label>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </>
-                                );
-                            })()}
                             <label className="block space-y-1">
                                 <span className="text-xs font-semibold text-ink-soft">
                                     Description
@@ -1727,21 +1983,6 @@ export function CalendarPage({ onBack }: CalendarPageProps) {
                                     }
                                     rows={3}
                                     className="w-full resize-none rounded-xl border border-paper-edge bg-board/40 px-3 py-2 text-sm outline-none"
-                                />
-                            </label>
-                            <label className="block space-y-1">
-                                <span className="text-xs font-semibold text-ink-soft">
-                                    Location
-                                </span>
-                                <input
-                                    value={draft.location}
-                                    onChange={(event) =>
-                                        setDraft({
-                                            ...draft,
-                                            location: event.target.value,
-                                        })
-                                    }
-                                    className="w-full rounded-xl border border-paper-edge bg-board/40 px-3 py-2 text-sm outline-none"
                                 />
                             </label>
                         </fieldset>

@@ -40,3 +40,20 @@
     );
     background-size: 22px 22px;
 }
+
+/* The Now widget glows while its stopwatch runs. The rule lives on the
+   widget shell -- the element that actually draws the border -- and reaches
+   into its own content for the running marker, so Board doesn't have to
+   thread the stopwatch's state back out through the shell.
+
+   The halo is the widget's own paper color, so it reads as the widget
+   itself spilling light onto the board rather than as a separate accent,
+   and it follows a custom theme's paper without needing its own token. The
+   board behind is much darker than the paper, which is what makes a
+   same-color glow visible at all. The widget's usual drop shadow is
+   repeated here because this rule replaces it outright. */
+.widget-shell:has(.now-widget-running) {
+    box-shadow:
+        0 6px 16px rgba(0, 0, 0, 0.25),
+        0 0 20px 8px color-mix(in srgb, var(--color-paper) 85%, transparent);
+}

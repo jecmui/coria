@@ -1,4 +1,10 @@
-export type WidgetType = "todo" | "note" | "timer" | "image" | "calendar";
+export type WidgetType =
+    | "todo"
+    | "note"
+    | "timer"
+    | "image"
+    | "calendar"
+    | "now";
 
 export interface WidgetLayout {
     x: number;
@@ -21,7 +27,8 @@ export interface BoardWidget {
         | TodoWidgetData
         | TimerData
         | ImageData
-        | CalendarWidgetData;
+        | CalendarWidgetData
+        | NowData;
 }
 
 export interface NoteData {
@@ -35,6 +42,24 @@ export interface CalendarWidgetData {
 export interface ImageData {
     src: string;
     fileName: string;
+}
+
+/** The "Currently working on..." widget: one task and a stopwatch.
+ *
+ *  `running` is deliberately absent. Closing the tab pauses the stopwatch
+ *  without stopping it, so a restored widget is always paused -- what has to
+ *  survive is the time banked so far, not whether it was counting. Stopping
+ *  is the only thing that clears the title and puts elapsedMs back to 0, so
+ *  those two fields are enough to tell "paused mid-task" from "idle". */
+export interface NowData {
+    /** The task being worked on; "" when idle. */
+    title: string;
+    /** The task row this points at, or null for a title with no task behind
+     *  it yet (only possible transiently -- picking or creating always sets
+     *  one). */
+    taskId: string | null;
+    /** Milliseconds banked across every run since the last stop. */
+    elapsedMs: number;
 }
 
 export interface TodoWidgetData {

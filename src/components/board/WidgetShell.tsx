@@ -7,6 +7,10 @@ const PIN_COLOR: Record<WidgetType, string> = {
     timer: "var(--color-pin-timer)",
     image: "var(--color-pin-image)",
     calendar: "var(--color-pin-calendar)",
+    // Shares the Pomodoro pin color: both are timers, and a color of its
+    // own would mean a new theme token, a new column, and a new control in
+    // Appearance settings.
+    now: "var(--color-pin-timer)",
 };
 
 interface WidgetShellProps {
@@ -34,7 +38,7 @@ export function WidgetShell({
     children,
 }: WidgetShellProps) {
     return (
-        <div className="group relative flex h-full w-full flex-col rounded-lg bg-paper border border-paper-edge shadow-[0_6px_16px_rgba(0,0,0,0.25)]">
+        <div className="widget-shell group relative flex h-full w-full flex-col rounded-lg bg-paper border border-paper-edge shadow-[0_6px_16px_rgba(0,0,0,0.25)]">
             {!mobile && (
                 <>
                     {/* Pin -- signature element, doubles as the drag handle */}

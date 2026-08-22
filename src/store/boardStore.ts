@@ -39,12 +39,20 @@ function rowToWidget(row: WidgetRow): BoardWidget {
     };
 }
 
+/** The Now widget's locked height. Unlike every other widget it can't be
+ *  resized vertically -- it holds a single row of controls, so extra height
+ *  would only ever be empty space. Lives here rather than beside the widget
+ *  so the store doesn't have to import a component to lay one out. */
+export const NOW_WIDGET_HEIGHT = 108;
+
 const DEFAULT_LAYOUTS: Record<WidgetType, WidgetLayout> = {
     todo: { x: 40, y: 40, width: 300, height: 360 },
     note: { x: 380, y: 40, width: 260, height: 220 },
     timer: { x: 40, y: 420, width: 260, height: 220 },
     image: { x: 40, y: 420, width: 260, height: 220 },
     calendar: { x: 40, y: 420, width: 420, height: 280 },
+    // Height is fixed for this one -- see NOW_WIDGET_HEIGHT.
+    now: { x: 380, y: 300, width: 360, height: NOW_WIDGET_HEIGHT },
 };
 
 function defaultDataFor(
@@ -62,6 +70,8 @@ function defaultDataFor(
             return { src: "", fileName: "" };
         case "calendar":
             return { view: "agenda" };
+        case "now":
+            return { title: "", taskId: null, elapsedMs: 0 };
     }
 }
 
