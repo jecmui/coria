@@ -533,3 +533,11 @@ alter table calendars
 -- All-day events are plain dates, so they now sit at UTC rather than the
 -- user's zone, which could shift them a day. Clearing the token re-pulls.
 update calendars set sync_token = null where external_calendar_id is not null;
+
+-- Task due dates, set from the Task settings popup (Today widget and full
+-- task list). A due date is a floating calendar date, not a real instant, so
+-- like an all-day calendar event it's always written/read as UTC midnight
+-- for the date picked -- see eventDateZone's doc comment in lib/calendar.ts
+-- for why that convention matters. Nullable: most tasks have no due date.
+alter table tasks
+  add column due_date timestamptz;

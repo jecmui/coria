@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTaskStore } from "../store/taskStore";
+import { TaskDueDateButton } from "./TaskDueDateButton";
 
 interface TaskListPageProps {
     onBack: () => void;
@@ -12,7 +13,9 @@ export function TaskListPage({ onBack }: TaskListPageProps) {
     const toggleFocusToday = useTaskStore((s) => s.toggleFocusToday);
     const removeTask = useTaskStore((s) => s.removeTask);
     const updateTask = useTaskStore((s) => s.updateTask);
+    const updateTaskDueDate = useTaskStore((s) => s.updateTaskDueDate);
     const [draft, setDraft] = useState("");
+    const [draftDueDate, setDraftDueDate] = useState<number | null>(null);
     const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
     const [editingDraft, setEditingDraft] = useState("");
     const editingInputRef = useRef<HTMLInputElement>(null);
@@ -27,8 +30,9 @@ export function TaskListPage({ onBack }: TaskListPageProps) {
     function handleAdd() {
         const title = draft.trim();
         if (!title) return;
-        addTask(title);
+        addTask(title, false, draftDueDate);
         setDraft("");
+        setDraftDueDate(null);
     }
 
     function handleStartEdit(taskId: string, title: string) {
@@ -60,21 +64,32 @@ export function TaskListPage({ onBack }: TaskListPageProps) {
                 it'll show up on the board.
             </p>
 
-            <div className="mb-6 flex gap-2">
+            <div
+                className="mb-6 flex gap-2"
+                onBlur={(e) => {
+                    if (
+                        e.currentTarget.contains(e.relatedTarget as Node)
+                    ) {
+                        return;
+                    }
+                    if (draft.trim()) {
+                        handleAdd();
+                    } else {
+                        setDraft("");
+                    }
+                }}
+            >
                 <input
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-                    onBlur={() => {
-                        if (draft.trim()) {
-                            handleAdd();
-                        } else {
-                            setDraft("");
-                        }
-                    }}
                     placeholder="Add a task..."
                     maxLength={CHARACTER_LIMIT}
                     className="flex-1 rounded-md border border-paper-edge bg-paper px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-pin-todo"
+                />
+                <TaskDueDateButton
+                    dueDate={draftDueDate}
+                    onChange={setDraftDueDate}
                 />
                 <button
                     onClick={handleAdd}
@@ -102,38 +117,74 @@ export function TaskListPage({ onBack }: TaskListPageProps) {
                                 className="mt-1 h-3.5 w-3.5 shrink-0 accent-pin-todo"
                             />
                             {editingTaskId === task.id ? (
-                                <input
-                                    ref={editingInputRef}
-                                    value={editingDraft}
-                                    onChange={(e) =>
-                                        setEditingDraft(e.target.value)
-                                    }
-                                    onKeyDown={(e) => {
-                                        if (e.key === "Enter") {
-                                            e.preventDefault();
-                                            handleSaveEdit(task.id);
-                                        } else if (e.key === "Escape") {
-                                            e.preventDefault();
-                                            setEditingTaskId(null);
-                                            setEditingDraft("");
+                                <div
+                                    className="flex min-w-0 flex-1 items-center gap-1 rounded-md border border-paper-edge bg-paper pr-1 focus-within:ring-1 focus-within:ring-paper-edge"
+                                    onBlur={(e) => {
+                                        if (
+                                            e.currentTarget.contains(
+                                                e.relatedTarget as Node,
+                                            )
+                                        ) {
+                                            return;
                                         }
-                                    }}
-                                    onBlur={() => {
                                         handleSaveEdit(task.id);
                                     }}
-                                    maxLength={CHARACTER_LIMIT}
-                                    className="flex-1 rounded-md border border-paper-edge bg-paper px-2 py-1 text-sm text-ink focus:outline-none focus:ring-1 focus:ring-paper-edge"
-                                />
-                            ) : (
-                                <button
-                                    type="button"
-                                    onClick={() =>
-                                        handleStartEdit(task.id, task.title)
-                                    }
-                                    className={`min-w-0 flex-1 text-left wrap-break-word ${task.done ? "text-ink-soft line-through" : "text-ink"}`}
                                 >
-                                    {task.title}
-                                </button>
+                                    <input
+                                        ref={editingInputRef}
+                                        value={editingDraft}
+                                        onChange={(e) =>
+                                            setEditingDraft(e.target.value)
+                                        }
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter") {
+                                                e.preventDefault();
+                                                handleSaveEdit(task.id);
+                                            } else if (e.key === "Escape") {
+                                                e.preventDefault();
+                                                setEditingTaskId(null);
+                                                setEditingDraft("");
+                                            }
+                                        }}
+                                        maxLength={CHARACTER_LIMIT}
+                                        className="min-w-0 flex-1 border-none bg-transparent px-2 py-1 text-sm text-ink outline-none focus:outline-none"
+                                    />
+                                    <TaskDueDateButton
+                                        dueDate={task.dueDate}
+                                        onChange={(dueDate) =>
+                                            updateTaskDueDate(
+                                                task.id,
+                                                dueDate,
+                                            )
+                                        }
+                                    />
+                                </div>
+                            ) : (
+                                <>
+                                    <button
+                                        type="button"
+                                        onClick={() =>
+                                            handleStartEdit(
+                                                task.id,
+                                                task.title,
+                                            )
+                                        }
+                                        className={`min-w-0 flex-1 text-left wrap-break-word ${task.done ? "text-ink-soft line-through" : "text-ink"}`}
+                                    >
+                                        {task.title}
+                                    </button>
+                                    {task.dueDate !== null && (
+                                        <TaskDueDateButton
+                                            dueDate={task.dueDate}
+                                            onChange={(dueDate) =>
+                                                updateTaskDueDate(
+                                                    task.id,
+                                                    dueDate,
+                                                )
+                                            }
+                                        />
+                                    )}
+                                </>
                             )}
                             <button
                                 onClick={() => toggleFocusToday(task.id)}

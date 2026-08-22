@@ -15,6 +15,7 @@ export const LIGHT_COLORS: AppearanceColors = {
     pinTimer: "#c1553d",
     pinImage: "#6f9c76",
     pinCalendar: "#9c7bc9",
+    dueDateBadge: "#e8e1d0",
 };
 
 export const DARK_COLORS: AppearanceColors = {
@@ -29,6 +30,7 @@ export const DARK_COLORS: AppearanceColors = {
     pinTimer: "#e2775a",
     pinImage: "#7fbf8a",
     pinCalendar: "#b499e0",
+    dueDateBadge: "#3a352c",
 };
 
 export const DEFAULT_APPEARANCE: AppearanceSettings = {
@@ -49,6 +51,7 @@ const CSS_VAR_BY_FIELD: Record<keyof AppearanceColors, string> = {
     pinTimer: "--color-pin-timer",
     pinImage: "--color-pin-image",
     pinCalendar: "--color-pin-calendar",
+    dueDateBadge: "--color-due-date-badge",
 };
 
 /** Resolves the concrete color set a theme setting represents. Light, Dark, and

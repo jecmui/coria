@@ -48,6 +48,11 @@ export const useAppearanceStore = create<AppearanceState>((set, get) => ({
             pinTimer: data.color_pin_timer ?? LIGHT_COLORS.pinTimer,
             pinImage: data.color_pin_image ?? LIGHT_COLORS.pinImage,
             pinCalendar: data.color_pin_calendar ?? LIGHT_COLORS.pinCalendar,
+            // Not queried from user_preferences yet -- there's no column for
+            // it and no settings control to set one, so Custom theme always
+            // gets the light default here (light/dark/system bypass this
+            // entirely via their own palette's dueDateBadge in resolveColors).
+            dueDateBadge: LIGHT_COLORS.dueDateBadge,
         };
 
         set({

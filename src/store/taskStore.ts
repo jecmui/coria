@@ -23,6 +23,7 @@ interface TaskRow {
     focus_today: boolean;
     created_at: string;
     sort_order: number;
+    due_date: string | null;
 }
 
 function rowToTask(row: TaskRow): Task {
@@ -33,6 +34,7 @@ function rowToTask(row: TaskRow): Task {
         focusToday: row.focus_today,
         createdAt: new Date(row.created_at).getTime(),
         sortOrder: row.sort_order,
+        dueDate: row.due_date ? new Date(row.due_date).getTime() : null,
     };
 }
 
@@ -66,8 +68,13 @@ interface TaskState {
      *  Safe to call anytime -- a no-op outside "automatic" mode or before its time. */
     checkTodayAutoClear: () => void;
     clear: () => void;
-    addTask: (title: string, focusToday?: boolean) => void;
+    addTask: (
+        title: string,
+        focusToday?: boolean,
+        dueDate?: number | null,
+    ) => void;
     updateTask: (id: string, title: string) => void;
+    updateTaskDueDate: (id: string, dueDate: number | null) => void;
     removeTask: (id: string) => void;
     toggleDone: (id: string) => void;
     toggleFocusToday: (id: string) => void;
@@ -271,7 +278,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             sortCompletedToBottom: false,
         }),
 
-    addTask: (title, focusToday = false) => {
+    addTask: (title, focusToday = false, dueDate = null) => {
         const { userId, tasks } = get();
         if (!userId) return;
 
@@ -297,6 +304,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             focusToday,
             createdAt: Date.now(),
             sortOrder: nextSortOrder,
+            dueDate,
         };
         set((state) => ({ tasks: [...state.tasks, optimisticTask] }));
 
@@ -307,6 +315,8 @@ export const useTaskStore = create<TaskState>((set, get) => ({
                 focus_today: focusToday,
                 user_id: userId,
                 sort_order: nextSortOrder,
+                due_date:
+                    dueDate !== null ? new Date(dueDate).toISOString() : null,
             })
             .select()
             .single()
@@ -343,6 +353,29 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             .then(({ error }) => {
                 if (error)
                     console.error("Failed to update task:", error.message);
+            });
+    },
+
+    updateTaskDueDate: (id, dueDate) => {
+        set((state) => ({
+            tasks: state.tasks.map((task) =>
+                task.id === id ? { ...task, dueDate } : task,
+            ),
+        }));
+
+        supabase
+            .from("tasks")
+            .update({
+                due_date:
+                    dueDate !== null ? new Date(dueDate).toISOString() : null,
+            })
+            .eq("id", id)
+            .then(({ error }) => {
+                if (error)
+                    console.error(
+                        "Failed to update task due date:",
+                        error.message,
+                    );
             });
     },
 

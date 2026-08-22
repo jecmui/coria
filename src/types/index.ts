@@ -64,6 +64,11 @@ export interface Task {
     createdAt: number;
     /** Drag-reorder position among today's focus tasks, as shown in the Today widget. */
     sortOrder: number;
+    /** Due date (ms epoch, UTC midnight for the picked calendar date). `null`
+     *  means the task has no due date and is permanent -- it never becomes
+     *  overdue and must be excluded from any due-date-based sorting/expiry,
+     *  not treated as due immediately or on any particular date. */
+    dueDate: number | null;
 }
 
 export type ThemeMode = "light" | "dark" | "system" | "custom";
@@ -80,6 +85,12 @@ export interface AppearanceColors {
     pinTimer: string;
     pinImage: string;
     pinCalendar: string;
+    /** Fill for a task's due-date badge. Not yet backed by its own settings
+     *  control or Supabase column -- always resolves to its palette default
+     *  for now (see appearanceStore.ts's `load`) -- but it's a real field on
+     *  the palette so wiring a picker in later is a drop-in, same as every
+     *  other color here. */
+    dueDateBadge: string;
 }
 
 export interface AppearanceSettings {

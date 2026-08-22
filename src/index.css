@@ -20,6 +20,11 @@
     --color-pin-image: #6f9c76;
     --color-pin-calendar: #9c7bc9;
 
+    /* Task due-date badge. Not yet user-customizable from Settings -- see
+       the field's doc comment on AppearanceColors -- but it's a real theme
+       token like the colors above, not a one-off literal. */
+    --color-due-date-badge: #e8e1d0;
+
     --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
     --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
     --font-mono: "JetBrains Mono", ui-monospace, monospace;

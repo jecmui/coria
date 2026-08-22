@@ -7,6 +7,7 @@ import { useDragReorder } from "../../lib/useDragReorder";
 import { useModalDismiss } from "../../lib/useModalDismiss";
 import { ContextMenu } from "../ContextMenu";
 import type { ContextMenuItem } from "../ContextMenu";
+import { TaskDueDateButton } from "../TaskDueDateButton";
 
 interface TodoWidgetProps {
     onOpenFullList: () => void;
@@ -76,6 +77,7 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
         dragHandleProps,
     } = useDragReorder(focusTasks, reorderFocusTasks);
     const updateTask = useTaskStore((s) => s.updateTask);
+    const updateTaskDueDate = useTaskStore((s) => s.updateTaskDueDate);
     const toggleFocusToday = useTaskStore((s) => s.toggleFocusToday);
     const clearFocusToday = useTaskStore((s) => s.clearFocusToday);
     const removeTask = useTaskStore((s) => s.removeTask);
@@ -84,6 +86,7 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
     const snapToGrid = useAppearanceStore((s) => s.settings.snapToGrid);
     const toggleSnapToGrid = useAppearanceStore((s) => s.toggleSnapToGrid);
     const [draft, setDraft] = useState("");
+    const [draftDueDate, setDraftDueDate] = useState<number | null>(null);
     const [isAdding, setIsAdding] = useState(false);
     const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
     const [editingDraft, setEditingDraft] = useState("");
@@ -182,13 +185,15 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
     function handleAdd() {
         const title = draft.trim();
         if (!title) return;
-        addTask(title, true);
+        addTask(title, true, draftDueDate);
         setDraft("");
+        setDraftDueDate(null);
         setIsAdding(false);
     }
 
     function handleCancel() {
         setDraft("");
+        setDraftDueDate(null);
         setIsAdding(false);
     }
 
@@ -351,6 +356,10 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
                                 maxLength={CHARACTER_LIMIT}
                                 className="min-w-0 flex-1 rounded-md border border-paper-edge focus:border-pin-todo bg-paper px-2 py-1 text-sm text-ink focus:outline-none"
                             />
+                            <TaskDueDateButton
+                                dueDate={draftDueDate}
+                                onChange={setDraftDueDate}
+                            />
                             <button
                                 type="button"
                                 onClick={handleAdd}
@@ -486,53 +495,101 @@ export function TodoWidget({ onOpenFullList }: TodoWidgetProps) {
                                                 className="mt-1 h-3.5 w-3.5 shrink-0 accent-pin-todo"
                                             />
                                             {editingTaskId === task.id ? (
-                                                <input
-                                                    ref={editingInputRef}
-                                                    value={editingDraft}
-                                                    onChange={(e) =>
-                                                        setEditingDraft(
-                                                            e.target.value,
-                                                        )
-                                                    }
-                                                    onKeyDown={(e) => {
-                                                        if (e.key === "Enter") {
-                                                            e.preventDefault();
-                                                            handleSaveEdit(
-                                                                task.id,
-                                                            );
-                                                        } else if (
-                                                            e.key === "Escape"
+                                                <div
+                                                    className="flex min-w-0 flex-1 items-center gap-1"
+                                                    onBlur={(e) => {
+                                                        if (
+                                                            e.currentTarget.contains(
+                                                                e.relatedTarget as Node,
+                                                            )
                                                         ) {
-                                                            e.preventDefault();
-                                                            setEditingTaskId(
-                                                                null,
-                                                            );
-                                                            setEditingDraft("");
+                                                            return;
                                                         }
-                                                    }}
-                                                    onBlur={() => {
-                                                        handleSaveEdit(task.id);
-                                                    }}
-                                                    maxLength={250}
-                                                    className="min-w-0 flex-1 border-none focus:border-none outline-none bg-paper text-sm text-ink text-wrap"
-                                                />
-                                            ) : (
-                                                <button
-                                                    type="button"
-                                                    onClick={() =>
-                                                        handleStartEdit(
+                                                        handleSaveEdit(
                                                             task.id,
-                                                            task.title,
-                                                        )
-                                                    }
-                                                    className={`min-w-0 flex-1 text-left transition-opacity group-hover/task:opacity-75 hover:cursor-grab active:cursor-grabbing ${
-                                                        task.done
-                                                            ? "wrap-break-word text-ink-soft line-through"
-                                                            : "wrap-break-word text-ink"
-                                                    }`}
+                                                        );
+                                                    }}
                                                 >
-                                                    {task.title}
-                                                </button>
+                                                    <input
+                                                        ref={editingInputRef}
+                                                        value={editingDraft}
+                                                        onChange={(e) =>
+                                                            setEditingDraft(
+                                                                e.target.value,
+                                                            )
+                                                        }
+                                                        onKeyDown={(e) => {
+                                                            if (
+                                                                e.key ===
+                                                                "Enter"
+                                                            ) {
+                                                                e.preventDefault();
+                                                                handleSaveEdit(
+                                                                    task.id,
+                                                                );
+                                                            } else if (
+                                                                e.key ===
+                                                                "Escape"
+                                                            ) {
+                                                                e.preventDefault();
+                                                                setEditingTaskId(
+                                                                    null,
+                                                                );
+                                                                setEditingDraft(
+                                                                    "",
+                                                                );
+                                                            }
+                                                        }}
+                                                        maxLength={250}
+                                                        className="min-w-0 flex-1 border-none focus:border-none outline-none bg-paper text-sm text-ink text-wrap"
+                                                    />
+                                                    <TaskDueDateButton
+                                                        dueDate={task.dueDate}
+                                                        onChange={(
+                                                            dueDate,
+                                                        ) =>
+                                                            updateTaskDueDate(
+                                                                task.id,
+                                                                dueDate,
+                                                            )
+                                                        }
+                                                    />
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                            handleStartEdit(
+                                                                task.id,
+                                                                task.title,
+                                                            )
+                                                        }
+                                                        className={`min-w-0 flex-1 text-left transition-opacity group-hover/task:opacity-75 hover:cursor-grab active:cursor-grabbing ${
+                                                            task.done
+                                                                ? "wrap-break-word text-ink-soft line-through"
+                                                                : "wrap-break-word text-ink"
+                                                        }`}
+                                                    >
+                                                        {task.title}
+                                                    </button>
+                                                    {task.dueDate !==
+                                                        null && (
+                                                        <TaskDueDateButton
+                                                            dueDate={
+                                                                task.dueDate
+                                                            }
+                                                            onChange={(
+                                                                dueDate,
+                                                            ) =>
+                                                                updateTaskDueDate(
+                                                                    task.id,
+                                                                    dueDate,
+                                                                )
+                                                            }
+                                                        />
+                                                    )}
+                                                </>
                                             )}
                                         </div>
                                     </li>
